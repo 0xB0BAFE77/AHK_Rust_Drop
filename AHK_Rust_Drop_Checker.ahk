@@ -3,7 +3,7 @@
 rust_checker.Start()
 Return
 
-*F1::rust_checker.Toggle()
+*F1::rust_checker.main_gui.Toggle()
 *Escape::ExitApp
 
 ~^s::
@@ -91,8 +91,12 @@ Class rust_checker
         If this.download_images()
             this.error(A_ThisFunc, "Unable to download images.", 1)
         
+        ;this.splash.update("Loading user settings.")
+        this.load_settings()
+        
         ;this.splash.update("Creating GUI")
         this.main_gui.create(this.streamer_data)
+        this.main_gui.Show()
         
         ;this.splash.update("Getting the paddles to start the heartbeat. CLEAR!!!")
         this.heartbeat()
@@ -115,8 +119,6 @@ Class rust_checker
     
     notify_check()
     {
-        ; Get fresh data
-        this.get_streamer_data()
         ; Compare fresh data to old notify list
         For index, user in this.streamer_data
         {
@@ -234,7 +236,6 @@ Class rust_checker
     ; .drop_pic_url     URL picture of this user's Rust drop
     ; .drop_pic_loc     Location on disk where Rust drop picture is saved
     ; .drop_name        The name of the drop
-    ; .notify           If true, you want notified when this streamer comes online
     parse_streamer_html()
     {
         strm_list   := []
@@ -306,8 +307,8 @@ Class rust_checker
     
     shutdown()
     {
-        this.save_log()                         ; Save error logs
-        this.main_gui.save_settings()                ; Save settings
+        this.save_log()                 ; Save error logs
+        this.save_settings()            ; Save settings
         
         ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?
         ; IfMsgBox, Yes
@@ -318,10 +319,23 @@ Class rust_checker
     save_log()
     {
         FileDelete, % this.path.log
-        If Errorlevel
-            FileAppend, % this.err_log, % this.path.log ".dump"
-        Else
-            FileAppend, % this.err_log, % this.path.log
+        FileAppend, % this.err_log, % this.path.log (ErrorLevel ? ".dump" : "")
+    }
+    
+    load_settings()
+    {
+        ; Load settings to ini file
+        ;IniRead, settings, % 
+        MsgBox Still need to write %A_ThisFunc%.
+        Return
+    }
+    
+    save_settings()
+    {
+        ; Save settings to ini file
+        ;IniWrite, value/pairs, file, section, keyname
+        MsgBox Still need to write %A_ThisFunc%.
+        Return
     }
     
     Class main_gui
@@ -336,8 +350,8 @@ Class rust_checker
         create(streamer_data)
         {
             pad         := 10
-            , padh      := Floor(pad/2)
-            , padq      := Floor(pad/4)
+            , padh      := pad/2
+            , padq      := pad/4
             , pad2      := pad*2
             , gui_w     := 640
             , gui_h     := 800
@@ -386,32 +400,9 @@ Class rust_checker
             x := gui_w - pad - btn_w
             Gui, Add, Button, w%btn_w% h%btn_h% x%x% yp HWNDhwnd, Close
                 this.add_method(hwnd, "close")
-            
+            ; Allows the gui to be clicked and dragged
             bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
             OnMessage(0x0201, bf)
-            
-            ; Create and load notify list and other saved settings
-            this.notify_list := {}
-            For index, user in streamer_data
-                this.notify_list[user.username] := 0
-            this.load_settings()
-            
-            x := A_ScreenWidth + 100
-            Gui, Show, AutoSize x%x% y100 ;Center, % this.title
-            Return
-        }
-        
-        load_settings()
-        {
-            ; Get settings from hard drive
-            ;IniRead, settings
-            MsgBox Still need to write %A_ThisFunc%.
-            Return
-        }
-        
-        save_settings()
-        {
-            MsgBox Still need to write %A_ThisFunc%.
             Return
         }
         
@@ -419,8 +410,8 @@ Class rust_checker
         {
             pad             := 10
             , pad2          := pad*2
-            , padh          := Floor(pad/2)
-            , padq          := Floor(pad/4)
+            , padh          := pad/2
+            , padq          := pad/4
             , status_w      := 80
             , status_h      := 20
             , status_txt_w  := 70
@@ -436,6 +427,7 @@ Class rust_checker
             Gui, Font, S12 Bold q5 cWhite
             ; Create groupbox border and add username to groupbox
             Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % user.username
+            
             ; Add status background to groupbox border
             x := sw - status_w - padh
             Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd
@@ -455,6 +447,7 @@ Class rust_checker
             h := 30
             Gui, Font, S10 Norm q5 cWhite
             Gui, Add, Text, wp h%h% xp y+-%h% HWNDhwnd +Center +Border +0x200, % user.drop_name
+            
             ; User's icon
             Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border, % user.avatar_loc
             ; Add notify checkbox
@@ -465,6 +458,7 @@ Class rust_checker
                 this.hwnd[user.username].notify := hwnd
                 bf := ObjBindMethod(this, "set_notify_status", index)
                 GuiControl, +g, % hwnd, % bf
+            
             ;this.set_notify_status()
             
             ; Add "notify me" checkbox below group box
@@ -494,10 +488,9 @@ Class rust_checker
             {
                 GuiControl, , % this.hwnd[user.username].status_pic
                     , % this.path[(user.status ? "img_online" : "img_offline")]
-                GuiControl, , % this.hwnd[user.username].status_txt, idk
-                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;        HERE        ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                GuiControl, , % this.hwnd[user.username].status_txt
+                    , % (user.status ? "LIVE" : "OFFLINE")
             }
-            MsgBox Still need to write %A_ThisFunc%
             Return
         }
         
@@ -509,7 +502,8 @@ Class rust_checker
         
         WM_LBUTTONDOWN()
         {
-            If (A_Gui = "Main"){
+            If (A_Gui = "Main")
+            {
                 MouseGetPos, x, y, win, con
                 If !InStr(con, "button")
                     SendMessage, 0x00A1, 2,,, A
@@ -520,12 +514,19 @@ Class rust_checker
         
         Show()
         {
-            Gui, Main:Show
+            Gui, Main:Show, AutoSize x50 y50, % this.title ;Center, % this.title
+            this.visible := True
         }
         
         Hide()
         {
             Gui, Main:Hide
+            this.visible := False
+        }
+        
+        Toggle()
+        {
+            Gui, % "Main:" (this.visible ? "Hide" : "Show")
         }
         
         close()
@@ -596,5 +597,4 @@ msg(txt)
     MsgBox, % txt
     Return
 }
-
 
