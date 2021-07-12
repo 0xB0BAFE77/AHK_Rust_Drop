@@ -94,44 +94,48 @@ Class rust_checker
         OnExit(this.use_method("shutdown"))
         
         this.splash.update("Downloading`nStreamer Data")
-        If this.get_streamer_data()
-            this.error(A_ThisFunc, "Error getting streamer data.", 1)
-        MsgBox
+        , this.get_streamer_data() ? this.error(A_ThisFunc, "Error getting streamer data.", 1) : ""
+        ; Create program folders
         this.splash.update("Creating`nFolders")
-        If this.folder_check()                     ; Check for program folder
-            this.error(A_ThisFunc, "Folder's cannot be created.", 1)
+        , this.folder_check() ? this.error(A_ThisFunc, "Folder's cannot be created.", 1) : ""
         MsgBox
+        
+        ; Create streamer folders
+        this.splash.update("Creating`nStreamer`nFolders")
+        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Streamer folders could not be created.", 1) : ""
+        MsgBox
+        
+        ; Load error log
         this.splash.update("Loading`nLog")
-        If this.load_log()
-            this.error(A_ThisFunc, "Unable to load error log.", 1)
+        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
         MsgBox
+        
+        ; Download images
         this.splash.update("Downloading`nImages")
-        If this.download_images()
-            this.error(A_ThisFunc, "Unable to download images.", 1)
+        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
         
+        ; Load settings
         this.splash.update("Loading`nSettings.")
-        this.load_settings()
+        , this.load_settings()
         
+        ; Create gui
         this.splash.update("Creating`nGUI")
-        this.main_gui.create(this.streamer_data)
-        this.main_gui.Show()
+        , this.main_gui.create(this.streamer_data)
+        , this.main_gui.Show()
         
-        this.splash.update("Starting`nheartbeat.`n(CLEAR!)")
-        this.heartbeat()
-        
-        this.splash.update("It's alive!")
-        this.splash.finish()
+        ; Start heartbeat
+        this.splash.update("Starting`nheartbeat.`n(CLEAR!!!)")
+        , this.heartbeat()
+        , this.splash.update("It's alive!")
+        , this.splash.finish()
         Return
     }
     
     heartbeat(bpm:=2)
     {
-        ; Get fresh data
-        this.get_streamer_data()
-        ; Update GUI with new info
-        this.main_gui.update_gui(this.streamer_data)
-        ; Do comparison
-        this.notify_check()
+        this.get_streamer_data()                        ; Get fresh data
+        , this.main_gui.update_gui(this.streamer_data)  ; Update GUI with new info
+        , this.notify_check()                           ; Do comparison
         Return
     }
     
@@ -160,20 +164,13 @@ Class rust_checker
         Return err
     }
     
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; LEFT OFF HERE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     folder_check()
     {
         Status := 0
         For key, path in this.path
-            If InStr(path, ".")
-                Continue
-            Else File
-        MsgBox done
-
-        Loop, Parse, % "app|img|user|streamers", % "|"
-            If !FileExist(this.path[A_LoopField])
+            If !InStr(path, ".") && (FileExist(path) = "")
             {
-                FileCreateDir, % this.path[A_LoopField]
+                FileCreateDir, % path
                 If ErrorLevel
                     this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
                     , status := 1
@@ -346,23 +343,36 @@ Class rust_checker
     
     save_log()
     {
-        FileDelete, % this.path.log
-        FileAppend, % this.err_log, % this.path.log (ErrorLevel ? ".dump" : "")
+        While (FileExist(this.path.log) != "")
+            FileDelete, % this.path.log
+        FileAppend, % this.err_log, % this.path.log
     }
     
     load_settings()
     {
         ; Load settings to ini file
-        ;IniRead, settings, % 
+        IniRead, settings, % filename, section, Key
         MsgBox Still need to write %A_ThisFunc%.
         Return
     }
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; you are here ;;;;;;;;;;;;;;;;;;;;;;;;;;;
     save_settings()
     {
         ; Save settings to ini file
         ;IniWrite, value/pairs, file, section, keyname
         MsgBox Still need to write %A_ThisFunc%.
+        Return
+    }
+    
+    ; Used to remove old streamer entries in the settings.ini file
+    clean_settings()
+    {
+        MsgBox, Still need to write this method: %A_ThisFunc%
+        ; Make an array of streamers
+        ; Loop through settings.ini
+        ; If no match is found
+        ; If streamer not found 
         Return
     }
     
