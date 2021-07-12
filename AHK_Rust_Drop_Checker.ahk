@@ -40,6 +40,22 @@ error codes
 -4 = No streamer HTML to parse
 */
 
+/* To-do:
+Create settings gui
+Add notification settings:
+    * Open up twitch stream page.
+    * Pop-up message (it's a regular windows message box).  
+    * System beeping (would like to put in the ability for you to use . (dots),  (spaces), and - (dashes) to make neat little beats. But this will come later.)
+    * Link to a video/site that has media you want to play. The script will launch that page when the person you want comes on. For example, you'd paste something like this in the box: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+    * Flashing notification icon or repeating pop-up/toast notifications.
+    * While it's currently not an option, I would like to add a way to send an email and/or text as a notification.
+    * Write-to-file. Most won't use this option, but it does allow for an extrenal app to get the current status of streamers and their key info without having to code their own solution.  
+    A prime example of use for this would be for live posting to a discord server.
+Updater/Version Checker
+
+
+*/
+
 Class rust_checker
 {
     Static  streamer_data   := ""
@@ -55,11 +71,13 @@ Class rust_checker
                                ,user            : A_AppData "\AHK_Rust_Drops\user"
                                ,log             : A_AppData "\AHK_Rust_Drops\log.txt"
                                ,settings        : A_AppData "\AHK_Rust_Drops\settings.ini"
+                               ,rust_icon       : A_AppData "\AHK_Rust_Drops\img\Rust_Symbol.png"
                                ,img_online      : A_AppData "\AHK_Rust_Drops\img\Online.png"
                                ,img_offline     : A_AppData "\AHK_Rust_Drops\img\Offline.png" }
     Static  url             := {git_img         : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/blob/main/img"
                                ,git_img_online  : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Online%20Blank%203D.png"
                                ,git_img_offline : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Offline%20Blank%203D.png"
+                               ,git_img_symbol  : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol.png"
                                ,git_ver         : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,facepunch       : "https://twitch.facepunch.com/" }
     Static  rgx             := {profile_url     : "<\s*?a\s*?href=""(.*?)"""
@@ -72,37 +90,37 @@ Class rust_checker
     
     Start()
     {
-        ;this.splash.start("Starting up " this.title)
+        this.splash.start("Starting up`n" this.title)
         OnExit(this.use_method("shutdown"))
         
-        ;this.splash.update("Downloading Streamer Data")
+        this.splash.update("Downloading`nStreamer Data")
         If this.get_streamer_data()
             this.error(A_ThisFunc, "Error getting streamer data.", 1)
-        
-        ;this.splash.update("Creating folders")
+        MsgBox
+        this.splash.update("Creating`nFolders")
         If this.folder_check()                     ; Check for program folder
             this.error(A_ThisFunc, "Folder's cannot be created.", 1)
-        
-        ;this.splash.start("Loading log")
+        MsgBox
+        this.splash.update("Loading`nLog")
         If this.load_log()
             this.error(A_ThisFunc, "Unable to load error log.", 1)
-        
-        ;this.splash.update("Downloading images")
+        MsgBox
+        this.splash.update("Downloading`nImages")
         If this.download_images()
             this.error(A_ThisFunc, "Unable to download images.", 1)
         
-        ;this.splash.update("Loading user settings.")
+        this.splash.update("Loading`nSettings.")
         this.load_settings()
         
-        ;this.splash.update("Creating GUI")
+        this.splash.update("Creating`nGUI")
         this.main_gui.create(this.streamer_data)
         this.main_gui.Show()
         
-        ;this.splash.update("Getting the paddles to start the heartbeat. CLEAR!!!")
+        this.splash.update("Starting`nheartbeat.`n(CLEAR!)")
         this.heartbeat()
         
-        ;this.splash.update("Finished!")
-        ;this.splash.finish()
+        this.splash.update("It's alive!")
+        this.splash.finish()
         Return
     }
     
@@ -122,7 +140,7 @@ Class rust_checker
         ; Compare fresh data to old notify list
         For index, user in this.streamer_data
         {
-            If (user.status) && (notify_list[user.username] = 1)
+            If (user.status) && (this.notify_list[user.username] = 1)
                 this.notify_user()
         }
         ; UPdate notify list
@@ -142,9 +160,16 @@ Class rust_checker
         Return err
     }
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; LEFT OFF HERE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     folder_check()
     {
         Status := 0
+        For key, path in this.path
+            If InStr(path, ".")
+                Continue
+            Else File
+        MsgBox done
+
         Loop, Parse, % "app|img|user|streamers", % "|"
             If !FileExist(this.path[A_LoopField])
             {
@@ -153,7 +178,11 @@ Class rust_checker
                     this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
                     , status := 1
             }
-        
+        Return status
+    }
+    
+    create_streamer_paths()
+    {
         For index, user in this.streamer_data
             If !FileExist(this.path.app "\" user.username)
             {
@@ -162,8 +191,7 @@ Class rust_checker
                     this.error(A_ThisFunc, "Unable to create streamer directory: " this.path.app "\" user.username)
                     , status := 1
             }
-        
-        Return status
+        Return
     }
     
     load_log()
@@ -362,6 +390,10 @@ Class rust_checker
             , err_gb_w  := gui_w/2 - pad*2
             , err_gb_h  := 40
             , err_txt_w := err_gb_w - 2
+            ,(rust_checker.img_getter(rust_checker.url.git_img_offline
+                                    , rust_checker.path.img
+                                    , "Rust_Symbol.png")  = 1)
+                                    ? status := 1 : ""
             
             Gui, Main:New, +Caption +HWNDhwnd, Rust Streamer Checker
                 this.hwnd.gui := hwnd
@@ -374,32 +406,32 @@ Class rust_checker
             ; Gui, Add, Checkbox, xm ym, Auto-Mode
             
             ; Build streamer area
+            mx := 0
             For index, user in streamer_data
-            {
-                mx   := Mod(A_Index, 3)
-                , (mx = 0 ? mx := 3 : "")
+                (++mx > 3 ? mx := 1 : "")
                 , my := Ceil(A_Index/3) 
                 , x  := (card_w * (mx-1)) + (pad*mx)
-                , y  := (pad*my) + (card_h * (my-1))
+                , y  := (card_h * (my-1)) + (pad*my)
                 , this.add_card(index, user, card_w, card_h, x, y)
-            }
             
             ; Add error area to display errors as they come
             Gui, Add, GroupBox, w%err_gb_w% h%err_gb_h% xm y+%pad% Section, Error Messages:
             Gui, Font, s8 cWhite
             Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1, FAKE ERROR MESSAGE FOR TESTING!
                 this.hwnd.error_txt
+            
             ; Minimize button
             x := gui_w/2 + pad
             y := (card_h+pad) * 3 + pad
             Gui, Font, s10
             Gui, Add, Button, w%btn_w% h%btn_h% x%x% y%y% HWNDhwnd, Minimize
+            
             ; Clean up button
             ;Gui, Add, Button, w%btn_w% h%btn_h% x+%pad2% yp HWNDhwnd, Clean Up
             ; Add exit and min button
             x := gui_w - pad - btn_w
-            Gui, Add, Button, w%btn_w% h%btn_h% x%x% yp HWNDhwnd, Close
-                this.add_method(hwnd, "close")
+            Gui, Add, Button, w%btn_w% h%btn_h% x%x% yp HWNDhwnd, Exit
+                this.add_method(hwnd, "quit")
             ; Allows the gui to be clicked and dragged
             bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
             OnMessage(0x0201, bf)
@@ -422,23 +454,27 @@ Class rust_checker
             , drop_pic_h    := drop_pic_w
             , notify_cb_w   := sw/2
             , notify_cb_h   := 20
+            , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
+            , action_btn_h  := avatar_h - notify_cb_h - pad
+            , name          := user.username
+            , this.hwnd[name] := {}
             
             Gui, Main:Default
             Gui, Font, S12 Bold q5 cWhite
             ; Create groupbox border and add username to groupbox
-            Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % user.username
+            Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % name
             
             ; Add status background to groupbox border
             x := sw - status_w - padh
             Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd
                 , % rust_checker.path[(user.status ? "img_online" : "img_offline")]
-                this.hwnd[user.username].status_pic := hwnd
+                this.hwnd[name].status_pic := hwnd
             ; Add status text
             Gui, Font, S10 Bold q5 cBlack
             Gui, Add, Text, w%status_txt_w% h%status_txt_h% xp+5 yp+2 +Center HWNDhwnd
                 , % user.status ? "LIVE" : "OFFLINE"
                 this.transparent_bg(hwnd)
-                this.hwnd[user.username].status_txt := hwnd
+                this.hwnd[name].status_txt := hwnd
             
             ; Drop_pic image
             x := sx + padh
@@ -449,15 +485,26 @@ Class rust_checker
             Gui, Add, Text, wp h%h% xp y+-%h% HWNDhwnd +Center +Border +0x200, % user.drop_name
             
             ; User's icon
-            Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border, % user.avatar_loc
+            Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border +Section, % user.avatar_loc
+            ; Add snooze/dismiss buttons
+            Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%padh% yp+%padh% +HWNDhwnd, Snooze
+                this.hwnd[name].snooze_btn := hwnd
+            Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%pad% yp +HWNDhwnd, Dismiss
+                this.hwnd[name].dismiss_btn := hwnd
+            
             ; Add notify checkbox
             Gui, Font, S10 Bold q5
             w := sw - avatar_w - pad2
             y := notify_cb_h
-            Gui, Add, Checkbox, w%w% h%notify_cb_h% x+%padh% y+-%y% +HWNDhwnd, Notify Me!
-                this.hwnd[user.username].notify := hwnd
+            x := avatar_w + pad
+            Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% HWNDhwnd, Notify Me!
+                this.hwnd[name].notify := hwnd
                 bf := ObjBindMethod(this, "set_notify_status", index)
                 GuiControl, +g, % hwnd, % bf
+            
+            ; Hide the buttons until they're needed
+            GuiControl, Hide, % this.hwnd[name].snooze_btn
+            GuiControl, Hide, % this.hwnd[name].dismiss_btn
             
             ;this.set_notify_status()
             
@@ -526,10 +573,12 @@ Class rust_checker
         
         Toggle()
         {
-            Gui, % "Main:" (this.visible ? "Hide" : "Show")
+            this.visible
+                ? this.Hide() 
+                : this.Show()
         }
         
-        close()
+        quit()
         {
             MsgBox, 0x4, Exiting, Are you sure you want to exit?
             IfMsgBox, Yes
@@ -540,35 +589,80 @@ Class rust_checker
     
     Class splash
     {
+        Static  hwnd        := {}
+                ,font_opt   := "s20 Bold " 
         start(msg)
         {
-            pad := 10
-            Gui, splash:New, -Caption
+            pad         := 10
+            , padO      := 12
+            , pad2      := pad*2
+            , padO2     := padO*2
+            , gui_w     := 220
+            , gui_h     := 120
+            , txt_w     := gui_w - pad2
+            , txt_h     := gui_h - pad2
+            , scrn_t    := scrn_r := scrn_b := scrn_l := 0
+            , rust_checker.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
+            
+            Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
+                this.hwnd.gui := hwnd
             Gui, splash:Default
-            Gui, Margin, % pad, % pad
-            Gui, Add, Text, xm ym w500 h150, % msg
-            Gui, Show, AutoSize Center
+            Gui, Margin, 0, 0
+            Gui, Color, 0x000001
+            
+            ;MsgBox, % "rust_checker.path.rust_icon: " rust_checker.path.rust_icon "`nFileExist(rust_checker.path.rust_icon): " FileExist(rust_checker.path.rust_icon) 
+            
+            Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % rust_checker.path.rust_icon
+            Gui, Font, % "s20 cBlack Bold", Consolas
+            Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % msg
+                this.hwnd.txt_shadow := hwnd
+            Gui, Font, % "s20 cWhite Norm", Consolas
+            Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % msg
+                this.hwnd.txt := hwnd
+            x := scrn_r - scrn_l - gui_w
+            y := scrn_b - scrn_t - gui_h
+            Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
+            WinSet, TransColor, 0x000001, % this.hwnd.gui
+            MsgBox well?
             this.animate()
             Return
         }
         
         update(txt)
         {
-            this.txt := txt
-            Return
+            Gui, Splash:Default
+            Gui, Font, % "s20 cBlack Bold", Consolas
+            GuiControl,, % this.hwnd.txt_shadow, % txt
+            Gui, Font, % "s20 cWhite Norm", Consolas
+            GuiControl,, % this.hwnd.txt, % txt
+            Gui, Splash:Show, AutoSize
         }
         
         animate()
         {
-            MsgBox animation code here
+            ;MsgBox animation code here
             Return
         }
         
         finish()
         {
-            Gui, splash:Destroy
-            Return
+            bf := ObjBindMethod(this, "Destroy")
+            SetTimer, % bf, -700
         }
+        
+        Destroy()
+        {
+            Gui, splash:Destroy
+        }
+    }
+    
+    ; Get the non-reserved area of a screen
+    get_monitor_workarea(ByRef mTop, ByRef mRight, ByRef mBottom, ByRef mLeft, m_num:=0)
+    {
+        If (m_num = 0)
+            SysGet, m_num, MonitorPrimary
+        SysGet, m, MonitorWorkArea, % m_num
+        Return
     }
     
     error(call:="func here", msg:="msg here", option:=0)
@@ -598,3 +692,44 @@ msg(txt)
     Return
 }
 
+/*
+FAQ
+Answering any questions here and also taking suggestions.
+
+Will this auto-log into my account and save my passwords?
+Nope. The script is open source and there's no good way to securely store your password. Thus, all logging in/out has to be done by the user.  
+Plus, this protects me because no one can be like "Your program let me info out!" Pfft. No, it didn't.
+
+Is this going to log my password/keystrokes?  
+No... It's an open source program. You can look at the code. The only data transmission going on is to the facepunch servers to get up-to-date HTML and to GitHub to get files like images. No other send/get requests are sent.  
+If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo ¯\_(-_-)_/¯  
+The purpose of this is to help the community get skins.  
+
+Can I set it to automatically open up the streamer when they come on?  
+Yes. It's one of the "notification" options. But it's the user's responsibility to be logged into twitch and to have their accounts linked. There are instructions about this at script launch.  
+You can watch other twitch streams, but do not be logged into your account while doing so or it could affect you getting drops.
+
+What kind of alerts does it give?  
+I haven't designed all the options, but as of now, here's what I have:  
+
+* Open up user's stream page.
+* Pop-up window message (just a standard Windows message box).  
+* System beeping. Can be continuous. (I'd like to put in the ability for you to use . (dots),  (spaces), and - (dashes) to make neat little beats. But this will come later.)
+* Link to a video/site that has media you want to play. The script will launch that page when the person you want comes on. For example, you'd paste something like this in the box: https://www.youtube.com/watch?v=dQw4w9WgXcQ
+* Flashing notification icon or repeating pop-up/toast notifications.
+* While it's currently not an option, I would like to add a way to send an email and/or text as a notification.
+* Write-to-file. Most won't use this option, but it does allow for an extrenal apps to get the current status of streamers and their key info without having to code their own solution.  
+A prime example of use for this would be for live posting to a discord server.
+
+Sometimes I mute my computer and forget.  
+That's not a question. But I understand. There an anti-mute setting that ensures mute isn't able, as well as a "set volume" setting.
+
+How much does this cost?  
+It's free.ninety-nine for everyone. I believe in open source for most things. I may add a "donation" button for anyone who would like to kick a tip my way. But the only thing you're EXPECTED to do is get skins easier.
+
+It burns when I pee. What should I do?  
+Always where a rubber, Jimmy. The sea can be dangerous. (Also, this is not AHK Rust Drop Checker question...)
+
+Will this notify me when my current drop is done?  
+While I do not have that programmed in, it is something I could add down the line. So, yes, but not yet.
+*/
