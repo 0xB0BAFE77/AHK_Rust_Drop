@@ -93,34 +93,33 @@ Class rust_checker
         this.splash.start("Starting up`n" this.title)
         OnExit(this.use_method("shutdown"))
         
-        this.splash.update("Downloading`nStreamer Data")
-        , this.get_streamer_data() ? this.error(A_ThisFunc, "Error getting streamer data.", 1) : ""
         ; Create program folders
         this.splash.update("Creating`nFolders")
         , this.folder_check() ? this.error(A_ThisFunc, "Folder's cannot be created.", 1) : ""
-        MsgBox
+        
+        
+        this.splash.update("Downloading`nStreamer Data")
+        , this.get_streamer_data() ? this.error(A_ThisFunc, "Error getting streamer data.", 1) : ""
         
         ; Create streamer folders
         this.splash.update("Creating`nStreamer`nFolders")
         , this.create_streamer_paths() ? this.error(A_ThisFunc, "Streamer folders could not be created.", 1) : ""
-        MsgBox
         
         ; Load error log
         this.splash.update("Loading`nLog")
         , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
-        MsgBox
         
         ; Download images
         this.splash.update("Downloading`nImages")
         , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
         
         ; Load settings
-        this.splash.update("Loading`nSettings.")
-        , this.load_settings()
+        ; this.splash.update("Loading`nSettings.")
+        ; , this.load_settings()
         
         ; Create gui
         this.splash.update("Creating`nGUI")
-        , this.main_gui.create(this.streamer_data)
+        , this.main_gui.create()
         , this.main_gui.Show()
         
         ; Start heartbeat
@@ -175,6 +174,12 @@ Class rust_checker
                     this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
                     , status := 1
             }
+        
+        ; Check settings
+        (FileExist(this.path.settings) = "")
+            FileAppend, % this.title " Settings File"
+                . "`nCreated: " A_Now "`n`n", % this.path.settings
+        
         Return status
     }
     
@@ -247,7 +252,7 @@ Class rust_checker
         Catch
             this.error(A_ThisFunc, "Error getting data from site: " this.url.facepunch)
             , status := 1
-        this.html   := web.ResponseText
+        this.html := web.ResponseText
         
         Return status
     }
@@ -348,21 +353,18 @@ Class rust_checker
         FileAppend, % this.err_log, % this.path.log
     }
     
-    load_settings()
+    ; Load settings from ini file
+    load_settings(section, key)
     {
-        ; Load settings to ini file
-        IniRead, settings, % filename, section, Key
-        MsgBox Still need to write %A_ThisFunc%.
-        Return
+        IniRead, value, % this.path.settings, % section, % key
+        Return value
     }
     
-    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; you are here ;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    save_settings()
+    ; Save settings to ini file
+    save_settings(section, key, value)
     {
-        ; Save settings to ini file
-        ;IniWrite, value/pairs, file, section, keyname
-        MsgBox Still need to write %A_ThisFunc%.
-        Return
+        IniWrite, % value, % this.path.settings, % section, % key
+        Return 
     }
     
     ; Used to remove old streamer entries in the settings.ini file
@@ -376,16 +378,17 @@ Class rust_checker
         Return
     }
     
-    Class main_gui
+    Class main_gui extends rust_checker
     {
-        ; hwnd properties:
+        ; gHwnd properties:
         ; gui               
         ; error_txt
-        Static  hwnd            := {}
+        Static  gHwnd           := {}
                 , notify_list   := {}
+                , gui_name      := "Main"
                 , visible       := True
         
-        create(streamer_data)
+        create()
         {
             pad         := 10
             , padh      := pad/2
@@ -400,13 +403,13 @@ Class rust_checker
             , err_gb_w  := gui_w/2 - pad*2
             , err_gb_h  := 40
             , err_txt_w := err_gb_w - 2
-            ,(rust_checker.img_getter(rust_checker.url.git_img_offline
+            , (rust_checker.img_getter(rust_checker.url.git_img_offline
                                     , rust_checker.path.img
                                     , "Rust_Symbol.png")  = 1)
                                     ? status := 1 : ""
             
             Gui, Main:New, +Caption +HWNDhwnd, Rust Streamer Checker
-                this.hwnd.gui := hwnd
+                this.gHwnd[this.gui_name] := hwnd
             Gui, Main:Default
             Gui, Margin, % pad, % pad
             Gui, Color, 0x000000
@@ -417,7 +420,7 @@ Class rust_checker
             
             ; Build streamer area
             mx := 0
-            For index, user in streamer_data
+            For index, user in this.streamer_data
                 (++mx > 3 ? mx := 1 : "")
                 , my := Ceil(A_Index/3) 
                 , x  := (card_w * (mx-1)) + (pad*mx)
@@ -428,7 +431,7 @@ Class rust_checker
             Gui, Add, GroupBox, w%err_gb_w% h%err_gb_h% xm y+%pad% Section, Error Messages:
             Gui, Font, s8 cWhite
             Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1, FAKE ERROR MESSAGE FOR TESTING!
-                this.hwnd.error_txt
+                this.gHwnd.error_txt
             
             ; Minimize button
             x := gui_w/2 + pad
@@ -445,6 +448,9 @@ Class rust_checker
             ; Allows the gui to be clicked and dragged
             bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
             OnMessage(0x0201, bf)
+            bf := ObjBindMethod(this, "WM_WINDOWPOSCHANGED", A_Gui)
+            OnMessage(0x0047, bf)
+            
             Return
         }
         
@@ -467,7 +473,7 @@ Class rust_checker
             , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
             , action_btn_h  := avatar_h - notify_cb_h - pad
             , name          := user.username
-            , this.hwnd[name] := {}
+            , this.gHwnd[name] := {}
             
             Gui, Main:Default
             Gui, Font, S12 Bold q5 cWhite
@@ -477,14 +483,14 @@ Class rust_checker
             ; Add status background to groupbox border
             x := sw - status_w - padh
             Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd
-                , % rust_checker.path[(user.status ? "img_online" : "img_offline")]
-                this.hwnd[name].status_pic := hwnd
+                , % this.path[(user.status ? "img_online" : "img_offline")]
+                this.gHwnd[name].status_pic := hwnd
             ; Add status text
             Gui, Font, S10 Bold q5 cBlack
             Gui, Add, Text, w%status_txt_w% h%status_txt_h% xp+5 yp+2 +Center HWNDhwnd
                 , % user.status ? "LIVE" : "OFFLINE"
                 this.transparent_bg(hwnd)
-                this.hwnd[name].status_txt := hwnd
+                this.gHwnd[name].status_txt := hwnd
             
             ; Drop_pic image
             x := sx + padh
@@ -498,9 +504,9 @@ Class rust_checker
             Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border +Section, % user.avatar_loc
             ; Add snooze/dismiss buttons
             Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%padh% yp+%padh% +HWNDhwnd, Snooze
-                this.hwnd[name].snooze_btn := hwnd
+                this.gHwnd[name].snooze_btn := hwnd
             Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%pad% yp +HWNDhwnd, Dismiss
-                this.hwnd[name].dismiss_btn := hwnd
+                this.gHwnd[name].dismiss_btn := hwnd
             
             ; Add notify checkbox
             Gui, Font, S10 Bold q5
@@ -508,13 +514,13 @@ Class rust_checker
             y := notify_cb_h
             x := avatar_w + pad
             Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% HWNDhwnd, Notify Me!
-                this.hwnd[name].notify := hwnd
+                this.gHwnd[name].notify := hwnd
                 bf := ObjBindMethod(this, "set_notify_status", index)
                 GuiControl, +g, % hwnd, % bf
             
             ; Hide the buttons until they're needed
-            GuiControl, Hide, % this.hwnd[name].snooze_btn
-            GuiControl, Hide, % this.hwnd[name].dismiss_btn
+            GuiControl, Hide, % this.gHwnd[name].snooze_btn
+            GuiControl, Hide, % this.gHwnd[name].dismiss_btn
             
             ;this.set_notify_status()
             
@@ -543,9 +549,9 @@ Class rust_checker
         {
             For index, user in streamer_data
             {
-                GuiControl, , % this.hwnd[user.username].status_pic
+                GuiControl, , % this.gHwnd[user.username].status_pic
                     , % this.path[(user.status ? "img_online" : "img_offline")]
-                GuiControl, , % this.hwnd[user.username].status_txt
+                GuiControl, , % this.gHwnd[user.username].status_txt
                     , % (user.status ? "LIVE" : "OFFLINE")
             }
             Return
@@ -561,7 +567,7 @@ Class rust_checker
         {
             If (A_Gui = "Main")
             {
-                MouseGetPos, x, y, win, con
+                MouseGetPos,,,, con
                 If !InStr(con, "button")
                     SendMessage, 0x00A1, 2,,, A
             }
@@ -569,14 +575,40 @@ Class rust_checker
             Return
         }
         
+        WM_WINDOWPOSCHANGED()
+        {
+            this.save_last_xy()
+            Return
+        }
+        
+        load_last_xy()
+        {
+            this.last_x := this.load_settings("gui_main", "last_x")
+            this.last_y := this.load_settings("gui_main", "last_y")
+            Return
+        }
+        
+        save_last_xy()
+        {
+            WinGetPos, last_x, last_y,,, % "ahk_id " this.gHwnd.main
+            this.save_settings("gui_main", "last_x", this.last_x)
+            this.save_settings("gui_main", "last_y", this.last_y)
+            Return
+        }
+        
         Show()
         {
-            Gui, Main:Show, AutoSize x50 y50, % this.title ;Center, % this.title
+            this.load_last_xy()
+            (this.last_x*0 = 0 ? "" : this.last_x := 0)
+            (this.last_y*0 = 0 ? "" : this.last_y := 0)
+            MsgBox, % "this.last_x: " this.last_x "`nthis.last_y: " this.last_y 
+            Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % this.gui_name ;Center, % this.title
             this.visible := True
         }
         
         Hide()
         {
+            this.save_last_xy()
             Gui, Main:Hide
             this.visible := False
         }
@@ -597,9 +629,9 @@ Class rust_checker
         }
     }
     
-    Class splash
+    Class splash extends rust_checker
     {
-        Static  hwnd        := {}
+        Static  gHwnd        := {}
                 ,font_opt   := "s20 Bold " 
         start(msg)
         {
@@ -612,28 +644,25 @@ Class rust_checker
             , txt_w     := gui_w - pad2
             , txt_h     := gui_h - pad2
             , scrn_t    := scrn_r := scrn_b := scrn_l := 0
-            , rust_checker.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
+            , this.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
+            , this.img_getter(this.url.git_img_symbol, this.path.img, "Rust_Symbol.png")
             
             Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
-                this.hwnd.gui := hwnd
+                this.gHwnd.gui := hwnd
             Gui, splash:Default
             Gui, Margin, 0, 0
             Gui, Color, 0x000001
             
-            ;MsgBox, % "rust_checker.path.rust_icon: " rust_checker.path.rust_icon "`nFileExist(rust_checker.path.rust_icon): " FileExist(rust_checker.path.rust_icon) 
-            
             Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % rust_checker.path.rust_icon
             Gui, Font, % "s20 cBlack Bold", Consolas
             Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % msg
-                this.hwnd.txt_shadow := hwnd
+                this.gHwnd.txt_shadow := hwnd
             Gui, Font, % "s20 cWhite Norm", Consolas
             Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % msg
-                this.hwnd.txt := hwnd
+                this.gHwnd.txt := hwnd
             x := scrn_r - scrn_l - gui_w
             y := scrn_b - scrn_t - gui_h
             Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
-            WinSet, TransColor, 0x000001, % this.hwnd.gui
-            MsgBox well?
             this.animate()
             Return
         }
@@ -642,9 +671,9 @@ Class rust_checker
         {
             Gui, Splash:Default
             Gui, Font, % "s20 cBlack Bold", Consolas
-            GuiControl,, % this.hwnd.txt_shadow, % txt
+            GuiControl,, % this.gHwnd.txt_shadow, % txt
             Gui, Font, % "s20 cWhite Norm", Consolas
-            GuiControl,, % this.hwnd.txt, % txt
+            GuiControl,, % this.gHwnd.txt, % txt
             Gui, Splash:Show, AutoSize
         }
         
