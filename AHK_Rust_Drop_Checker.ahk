@@ -60,7 +60,7 @@ Class rust_checker
 {
     Static  streamer_data   := ""
             , title         := "AHK Rust Drop Checker"
-            , version       := "1.0.0.0"
+            , version       := "1.0.0.1"
             , html          := ""
             , err_last      := ""
             , err_log       := ""
