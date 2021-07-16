@@ -411,23 +411,25 @@ Class rust_checker
             , padh          := pad/2
             , padq          := pad/4
             , pad2          := pad*2
-            , gui_w         := 640
             , gui_h         := 800
             , card_w        := 200
             , card_h        := 270
             , btn_w         := 80
             , btn_h         := 30
-            , cards_per_col := 4
-            , err_gb_w      := gui_w/2 - pad*2
-            , err_gb_h      := 40
-            , err_txt_w     := err_gb_w - 2
+            , strm_total    := this.streamer_data.MaxIndex()
+            , cards_per_col := (strm_total < 10) ? 3
+                            : Ceil(strm_total/3)
             , opt_w         := 200
             , row_total     := Ceil(this.streamer_data.MaxIndex() / cards_per_col)
             , opt_h         := (row_total * card_h) + ((row_total-1) * pad)
-            , (this.img_getter(this.url.git_img_offline
-                                , rust_checker.path.img
-                                , "Rust_Symbol.png")  = 1)
-                                ? status := 1 : ""
+            , gui_w         := opt_w + (cards_per_col * card_w) + (cards_per_col * pad)
+            , err_gb_w      := gui_w/2 - pad*2
+            , err_gb_h      := 40
+            , err_txt_w     := err_gb_w - 2
+            
+            
+            (this.img_getter(this.url.git_img_offline , this.path.img, "Rust_Symbol.png") = 1)
+                ? status := 1 : ""
             
             Gui, Main:New, +Caption +HWNDhwnd, Rust Streamer Checker
                 this.gHwnd[this.gui_name] := hwnd
@@ -586,7 +588,7 @@ Class rust_checker
             ; Refresh frequency
             y := upd_gb_h + pad
             Gui, Font, cWhite
-            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Update Frequency
+            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Streamer Check Frequency
             Gui, Font, s10 Norm
             Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad2% +Center, 1
             Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
@@ -761,7 +763,7 @@ Class rust_checker
     Class splash extends rust_checker
     {
         Static  gHwnd        := {}
-                ,font_opt   := "s20 Bold " 
+                ,font_opt   := "s20 Bold "
         start(msg)
         {
             pad         := 10
@@ -868,7 +870,7 @@ Class rust_checker
                     MsgBox, 0x4, Update Available!
                     , % "A new version of " this.title " is available.`nWould you like to download it?"
                     IfMsgBox, Yes
-                        this.update()
+                        this.run_update()
                 }
             }
         
