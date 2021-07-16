@@ -207,8 +207,9 @@ Class rust_checker
         
         ; Check settings file
         If !FileExist(this.path.settings)
-            FileAppend, % this.title " Settings File"
-                . "`nCreated: " A_Now "`n`n", % this.path.settings
+            FileAppend, % "[Settings]"
+                . "`nCreated=" A_Now "`n`n"
+                , % this.path.settings
         
         Return status
     }
