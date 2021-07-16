@@ -9,7 +9,8 @@ Return
 ~^s::
 	IfWinActive, % A_ScriptName
     {
-        Reload
+        Run, % A_ScriptFullPath
+        Sleep, 100
         ExitApp
     }
 Return
@@ -65,6 +66,8 @@ Class rust_checker
             , err_last      := ""
             , err_log       := ""
             , checker       := True
+            , notify_list   := {}
+            , update_freq   := 60
     Static  path            := {app             : A_AppData "\AHK_Rust_Drops"
                                ,img             : A_AppData "\AHK_Rust_Drops\img"
                                ,temp            : A_AppData "\AHK_Rust_Drops\temp"
@@ -115,6 +118,10 @@ Class rust_checker
         this.splash.update("Downloading`nImages")
         , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
         
+        ; Create and load notify_list settings
+        this.splash.update("Generating`nNotify List")
+        , this.generate_notify_list()
+        
         ; Create gui
         this.splash.update("Creating`nGUI")
         , this.main_gui.create()
@@ -126,7 +133,7 @@ Class rust_checker
         
         ; Check for updates!
         this.splash.update("Update`nCheck!")
-        , this.update_check()
+        , this.update_check(1)
         
         this.splash.finish()
         this.main_gui.Show()
@@ -135,37 +142,46 @@ Class rust_checker
     
     heartbeat()
     {
-        Return
-        this.next_beat()                ; 
-        this.get_streamer_data()      ; Get fresh data
+        this.next_beat()                ; Set when next update should occur
+        , this.get_streamer_data()      ; Get fresh data
         , this.main_gui.update_gui()    ; Update GUI with new info
-        , this.notify_check()           ; Do comparison
-        MsgBox running heartbeat
-        
+        , this.notify_check()           ; See if a notification needs to happen
         Return
     }
     
-    next_beat()
+    next_beat(time:=0)
     {
-        bf := ObjBindMethod(this, "heartbeat")
-        SetTimer, % bf, % -1 * 1000 * (60/this.main_gui.interval)
+        Static bf := ""
+        (bf = "")   ? bf := ObjBindMethod(this, "heartbeat") : ""
+        (time = 0)  ? time := 1000 * 60 / this.main_gui.interval : ""
+        SetTimer, % bf, Delete
+        SetTimer, % bf, % -1 * Abs(time)
         Return
     }
     
     notify_check()
     {
-        ; Compare fresh data to old notify list
-        For index, user in this.streamer_data
+        For index, user in this.streamer_data                       ; Compare fresh data to old notify list
         {
-            If (user.status) && (this.notify_list[user.username] = 1)
-                this.notify_user()
+            If (user.status) && (this.notify_list[user.username])   ; 
+                this.notify_user(user.username)
         }
         ; UPdate notify list
     }
     
-    notify_user()
+    notify_user(name)
     {
-        MsgBox, This [user] is on! Make the icon flash!
+        TrayTip, Online!, %name% is online! Make the icon flash!, 3
+        Return
+    }
+    
+    generate_notify_list()
+    {
+        this.notify_list := {}
+        For index, user in this.streamer_data
+            value := this.load_settings("notify_list", user.username)
+            , this.notify_list[user.username] := (value = "Err" ? 0 : value)
+        
         Return
     }
     
@@ -244,10 +260,8 @@ Class rust_checker
                 , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
         
         ; Get status online/offline icons
-        (this.img_getter(this.url.git_img_online, this.path.img, "Online.png")  = 1)
-            ? status := 1 : ""
-        (this.img_getter(this.url.git_img_offline, this.path.img, "Offline.png")  = 1)
-            ? status := 1 : ""
+        (this.img_getter(this.url.git_img_online, this.path.img, "Online.png")  = 1)    ? status := 1 : ""
+        (this.img_getter(this.url.git_img_offline, this.path.img, "Offline.png")  = 1)  ? status := 1 : ""
         
         Return Status
     }
@@ -388,7 +402,6 @@ Class rust_checker
         ; gui               
         ; error_txt
         Static  gHwnd           := {}
-                , notify_list   := {}
                 , gui_name      := "Main"
                 , visible       := True
         
@@ -420,7 +433,7 @@ Class rust_checker
                 this.gHwnd[this.gui_name] := hwnd
             Gui, Main:Default
             Gui, Margin, % pad, % pad
-            Gui, Color, 0x000000
+            Gui, Color, 0x000000, 0xFFFF00
             Gui, Font, s12 cWhite
             
             ; Possible auto-mode later
@@ -521,16 +534,13 @@ Class rust_checker
             w := sw - avatar_w - pad2
             y := notify_cb_h
             x := avatar_w + pad
-            Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% HWNDhwnd, Notify Me!
+            Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% +HWNDhwnd, Notify Me!
                 this.gHwnd[name].notify_cb := hwnd
-                ;this.add_control_method(hwnd, this, "quit")
                 this.add_control_method(hwnd, this, "notify_action", name)
-            
+                GuiControl,, % hwnd, % this.notify_list[name]
             ; Hide the buttons until they're needed
             GuiControl, Hide, % this.gHwnd[name].snooze_btn
             GuiControl, Hide, % this.gHwnd[name].dismiss_btn
-            
-            ;this.notify_action()
             
             ; Add "notify me" checkbox below group box
             ;Gui, Add, Checkbox, 
@@ -538,11 +548,11 @@ Class rust_checker
             Return
         }
         
-        ;ghwnd.udpate_btn
-        ;ghwnd.update_txt
-        ;ghwnd.interval_sld
-        ;ghwnd.
-        ;ghwnd.
+        ;gHwnd.udpater_btn
+        ;gHwnd.update_txt
+        ;gHwnd.interval_sld
+        ;gHwnd.
+        ;gHwnd.
         add_gui_options(start_x, start_y, max_w, max_h:=0)
         {
             pad         := 10
@@ -552,9 +562,9 @@ Class rust_checker
             , x_left    := start_x + pad
             , gb_w      := max_w - pad
             
-            , upd_gb_h  := 70
-            , upd_def_w := (gb_w / 2) - pad
-            , upd_def_h := upd_gb_h - (pad3)
+            , upd_gb_h  := 60
+            , upd_btn_w := gb_w - pad2
+            , upd_btn_h := upd_gb_h - pad3
             
             , slide_min := 1
             , slide_max := 10
@@ -564,31 +574,31 @@ Class rust_checker
             , ref_txt_w := gb_w - pad2
             , ref_gb_h  := ref_def_h * 2 + (pad2*2)
             
-            ; Updater
-            Gui, Font, s12 cFFAA00
-            Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section, Update Checker
-            Gui, Font, s10 cWhite
-            Gui, Add, Text, w%upd_def_w% h%upd_def_h% xp+%pad% yp+%pad2% +HWNDhwnd +Center, Initialize...
-                this.ghwnd.udpate_txt := hwnd
-            Gui, Add, Button, w%upd_def_w% h%upd_def_h% x+0 yp +HWNDhwnd, Update
-                this.ghwnd.udpate_btn := hwnd
-                GuiControl, Disable, % hwnd
+            Gui, Font, s12 Bold cFFAA00
+            Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker
+                this.ghwnd.updater_gb := hwnd
+            Gui, Font, s10 Norm cBlack
+            Gui, Add, Button, w%upd_btn_w% h%upd_btn_h% xp+%pad% yp+%pad2% +HWNDhwnd +Disabled, Initializing...
+                this.gHwnd.updater_btn := hwnd
                 this.start_update_check_timer()
-            
+                this.add_control_method(hwnd, this, "run_update")
+            ;;;;;;;;;;;;; I"m here ;;;;;;;;;;;;;
             ; Refresh frequency
             y := upd_gb_h + pad
-            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Check Frequency
-            Gui, Font, s10 cWhite
-            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad2% +Right, 1
-            Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval
+            Gui, Font, cWhite
+            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Update Frequency
+            Gui, Font, s10 Norm
+            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad2% +Center, 1
+            Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
                 , % this.load_interval()
-                this.ghwnd.interval_sld := hwnd
+                this.gHwnd.interval_sld := hwnd
                 this.add_control_method(hwnd, this, "update_interval")
                 this.update_interval(hwnd,"","")
             
-            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp, 10
-            Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%pad% +Center
-                , % "Checking every " Round(60 / this.interval) " seconds"
+            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp +Center, 10
+            Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%pad% +Center +HWNDhwnd, Initializing...
+                this.gHwnd.check_per_sec := hwnd
+                this.update_interval_per_sec()
             
             ;~ ; Quick link to twitch rewards claim page
             ;~ y := upd_gb_h + pad
@@ -613,15 +623,18 @@ Class rust_checker
                 :                 i
         }
         
-        start_update_check_timer(timer:=0)
+        update_interval_per_sec()
         {
-            Static state := 0
-            If (timer < 0)
-                Return state
-            bf := ObjBindMethod(this, "update_check")
-            SetTimer, % bf, % (timer = 0 ? "Delete" : timer)
-            state := (timer > 1 ? 1 : 0)
-            Return state
+            GuiControl, , % this.gHwnd.check_per_sec
+                , % "Checking every " Round(60 / this.interval) " seconds" 
+            Return 
+        }
+        
+        start_update_check_timer()
+        {
+            bf  := ObjBindMethod(this, "update_check")
+            SetTimer, % bf, % Abs(this.update_freq) * -1000
+            Return
         }
         
         update_interval(hwnd, gui_event, event_info, err_level:="")
@@ -629,26 +642,39 @@ Class rust_checker
             GuiControlGet, interval,, % hwnd
             this.interval := interval
             this.next_beat()
+            this.update_interval_per_sec()
             Return
         }
         
         notify_action(name, hwnd, GuiEvent, EventInfo, ErrLevel:="")
         {
-            MsgBox, % "name: " name "`nhwnd: " hwnd "`nguievent: " guievent "`neventinfo: " eventinfo 
-            name    := this.streamer_data[index].username
-            GuiControlGet, notify_state, , % hwnd
-            
+            GuiControlGet, state, , % hwnd                  ; Get check state
+            this.notify_list[name] := state                 ; Update state into notify list
+            this.save_settings("notify_list", name, state)  ; Save to settins file
             Return
         }
         
         update_gui()
         {
+            txt := ""
             For index, user in this.streamer_data
             {
-                GuiControl,, % this.gHwnd[user.username].status_pic
-                    , % this.path[(user.status ? "img_online" : "img_offline")]
-                GuiControl,, % this.gHwnd[user.username].status_txt
-                    , % (user.status ? "LIVE" : "OFFLINE")
+                ; Get current text
+                GuiControlGet, txt,, % this.gHwnd[user.username].status_txt
+                
+                ; Don't update if status hasn't changed
+                If ((txt = "live") && (user.status))
+                    Continue
+                Else If ((txt = "offline") && !user.status)
+                    Continue
+                Else
+                {
+                    MsgBox Change! Need to update!
+                    GuiControl,, % this.gHwnd[user.username].status_pic
+                        , % this.path[(user.status ? "img_online" : "img_offline")]
+                    GuiControl,, % this.gHwnd[user.username].status_txt
+                        , % (user.status ? "LIVE" : "OFFLINE")
+                }
             }
             Return
         }
@@ -664,7 +690,7 @@ Class rust_checker
             If (A_Gui = "Main")
             {
                 MouseGetPos,,,, con
-                If !InStr(con, "button")
+                If !InStr(con, "button") && !InStr(con, "trackbar321")
                     SendMessage, 0x00A1, 2,,, A
             }
             
@@ -827,24 +853,46 @@ Class rust_checker
         Return
     }
     
-    update_check()
+    update_check(verbose := 0)
     {
         online_version  := Trim(this.web_get(this.url.update), " `t`r`n")
+        update_found    := 0
         Loop, % StrLen(this.version)
             If (SubStr(this.version, A_Index, 1) = SubStr(online_version, A_Index, 1))
                 Continue
             Else
             {
-                MsgBox, 0x4, Update Available!
-                , % "A new version of " this.title " is available.`nWould you like to download it?"
-                IfMsgBox, Yes
-                    this.update()
+                update_found := 1
+                If verbose
+                {
+                    MsgBox, 0x4, Update Available!
+                    , % "A new version of " this.title " is available.`nWould you like to download it?"
+                    IfMsgBox, Yes
+                        this.update()
+                }
             }
         
-        Return status
+        Gui, Main:Default
+        ; Set the Updater Groupbox text and color
+        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.main_gui.gHwnd.updater_gb
+        ; Set the button text
+        Gui, Font, Norm cBlack
+        GuiControl, Text, % this.main_gui.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date :D")
+        ; Enable/disable
+        GuiControl, % (update_found ? "Enable" : "Disable"), % this.main_gui.gHwnd.updater_btn
+        /*
+            GuiControl, +cDA4F49, Red
+            GuiControl,, Red, Red Text
+        return
+        
+        Black:
+            GuiControl, +c000000, Red
+            GuiControl,, Red, Black Text
+        */
+        Return
     }
     
-    update()
+    run_update()
     {
         status      := 0
         , dq        := """"
@@ -853,6 +901,10 @@ Class rust_checker
         , orig_loc  := A_ScriptDir
         , file_name := A_ScriptName
         , upd_name  := "updater.ahk"
+        
+        MsgBox, 0x1, Confirm Update, % "Click OK to update.`nClick Cancel to go back."
+        IfMsgBox, Cancel
+            Return
         
         ; Get files
         UrlDownloadToFile, % url, % temp_path "\" A_ScriptName
@@ -874,13 +926,11 @@ Class rust_checker
         (status := ErrorLevel)
             ? this.error(A_ThisFunc, "Could not write updater file."
                 . "`nlocation: " temp_path "\" upd_name) : ""
-        ; Run updater
+        ; Run updater and exit here
         Run, % A_AhkPath " " temp_path "\" upd_name
             . " " source
             . " " destination
-        ; Run updater and exit here
-        MsgBox, how did it go?
-        Return
+        ExitApp
     }
     
     web_get(url)
@@ -939,7 +989,7 @@ Plus, this protects me because no one can be like "Your program let me info out!
 
 Is this going to log my password/keystrokes?  
 No... It's an open source program. You can look at the code. The only data transmission going on is to the facepunch servers to get up-to-date HTML and to GitHub to get files like images. No other send/get requests are sent.  
-If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo ¯\_(-_-)_/¯  
+If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo Â¯\_(-_-)_/Â¯  
 The purpose of this is to help the community get skins.  
 
 Can I set it to automatically open up the streamer when they come on?  
