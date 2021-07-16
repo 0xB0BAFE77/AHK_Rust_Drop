@@ -60,7 +60,7 @@ Class rust_checker
 {
     Static  streamer_data   := ""
             , title         := "AHK Rust Drop Checker"
-            , version       := "1.0.0.1"
+            , version       := "1.0.0.0"
             , html          := ""
             , err_last      := ""
             , err_log       := ""
@@ -118,7 +118,6 @@ Class rust_checker
         ; Create gui
         this.splash.update("Creating`nGUI")
         , this.main_gui.create()
-        , this.main_gui.Show()
         
         ; Start heartbeat
         this.splash.update("Starting`nheartbeat.`n(CLEAR!!!)")
@@ -126,10 +125,11 @@ Class rust_checker
         , this.splash.update("It's alive!")
         
         ; Check for updates!
-        this.splash.update("Any new`nversions?")
+        this.splash.update("Update`nCheck!")
         , this.update_check()
         
         this.splash.finish()
+        this.main_gui.Show()
         Return
     }
     
@@ -834,7 +834,13 @@ Class rust_checker
             If (SubStr(this.version, A_Index, 1) = SubStr(online_version, A_Index, 1))
                 Continue
             Else
-                this.update()
+            {
+                MsgBox, 0x4, Update Available!
+                , % "A new version of " this.title " is available.`nWould you like to download it?"
+                IfMsgBox, Yes
+                    this.update()
+            }
+        
         Return status
     }
     
@@ -859,12 +865,16 @@ Class rust_checker
             . "`nFileMove, % A_Args.1, % A_Args.2, 1"
             . "`nRun, % A_AhkPath A_Space A_Args.2"
             . "`nExitApp"
-        source      := dq temp_path "\" file_name dq    ; arg1
-        destination := dq A_ScriptFullPath dq           ; arg2
-        ; Delete any
+        source      := dq temp_path "\" file_name dq
+        destination := dq A_ScriptFullPath dq
+        ; Delete any previous updater
         If FileExist(temp_path "\" upd_name)
             FileDelete, % temp_path "\" upd_name
         FileAppend, % code, % temp_path "\" upd_name
+        (status := ErrorLevel)
+            ? this.error(A_ThisFunc, "Could not write updater file."
+                . "`nlocation: " temp_path "\" upd_name) : ""
+        ; Run updater
         Run, % A_AhkPath " " temp_path "\" upd_name
             . " " source
             . " " destination
