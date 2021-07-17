@@ -77,12 +77,13 @@ Class rust_checker
                                ,rust_icon       : A_AppData "\AHK_Rust_Drops\img\Rust_Symbol.png"
                                ,img_online      : A_AppData "\AHK_Rust_Drops\img\Online.png"
                                ,img_offline     : A_AppData "\AHK_Rust_Drops\img\Offline.png" }
-    Static  url             := {git_img_online  : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Online%20Blank%203D.png"
+    Static  url             := {git_homepage    : "https://github.com/0xB0BAFE77/AHK_Rust_Drop"
+                               ,git_img_online  : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Online%20Blank%203D.png"
                                ,git_img_offline : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Offline%20Blank%203D.png"
                                ,git_img_symbol  : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol.png"
                                ,git_ver         : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,ahk_rust_checker: "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/AHK_Rust_Drop_Checker.ahk"
-                               ,update          : "https://raw.githubusercontent.com/0xB0BAFE77/AHK_Rust_Drop/main/version.txt"
+                               ,update          : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,twitch_rewards  : "https://www.twitch.tv/drops/inventory"
                                ,facepunch       : "https://twitch.facepunch.com/" }
     Static  rgx             := {profile_url     : "<\s*?a\s*?href=""(.*?)"""
@@ -558,38 +559,55 @@ Class rust_checker
         ;gHwnd.
         add_gui_options(start_x, start_y, max_w, max_h:=0)
         {
+            ; Std
             pad         := 10
             , pad2      := pad * 2
             , pad3      := pad * 3
             , padh      := pad / 2
             , x_left    := start_x + pad
             , gb_w      := max_w - pad
-            
-            , upd_gb_h  := 60
+            ; Updater
+              upd_gb_h  := 60
             , upd_btn_w := gb_w - pad2
             , upd_btn_h := upd_gb_h - pad3
-            
-            , slide_min := 1
+            ; Refresh Frequence
+              slide_min := 1
             , slide_max := 10
             , ref_def_h := 20
             , ref_bud_w := 15
             , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
             , ref_txt_w := gb_w - pad2
-            , ref_gb_h  := ref_def_h * 2 + (pad2*2)
+            , ref_gb_h  := (ref_def_h*2) + (pad*4)
+            ; Quick links
+              link_list := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
+                           ,{txt:"Streamer Drops Page"  , url:this.url.facepunch        }
+                           ,{txt:"AHK Drop Alert Home"  , url:this.url.git_homepage     } ]
+            , ql_txt_w  := gb_w - pad2
+            , ql_txt_h  := 16
+            , ql_gui_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad3
+            ; Notify Options
+              noti_list := [{}]
+            , noti_cb_w := gb_w - pad
+            , noti_cb_h := 16
+            , noti_gb_h := noti_list.MaxIndex() * (noti_cb_h + padh)
+            , 
             
-            Gui, Font, s12 Bold cFFAA00
-            Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker
+            ; Updater section
+            Gui, Font, s10 Bold cFFAA00
+            Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker:
                 this.ghwnd.updater_gb := hwnd
-            Gui, Font, s10 Norm cBlack
+                last_gb := upd_gb_h
+            Gui, Font, Norm cBlack
             Gui, Add, Button, w%upd_btn_w% h%upd_btn_h% xp+%pad% yp+%pad2% +HWNDhwnd +Disabled, Initializing...
                 this.gHwnd.updater_btn := hwnd
                 this.start_update_check_timer()
                 this.add_control_method(hwnd, this, "run_update")
-            ;;;;;;;;;;;;; I"m here ;;;;;;;;;;;;;
+            
             ; Refresh frequency
-            y := upd_gb_h + pad
             Gui, Font, cWhite
-            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Streamer Check Frequency
+            y := last_gb + pad
+            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Streamer Check Frequency:
+                last_gb := ref_gb_h
             Gui, Font, s10 Norm
             Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad2% +Center, 1
             Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
@@ -597,23 +615,38 @@ Class rust_checker
                 this.gHwnd.interval_sld := hwnd
                 this.add_control_method(hwnd, this, "update_interval")
                 this.update_interval(hwnd,"","")
-            
             Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp +Center, 10
             Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%pad% +Center +HWNDhwnd, Initializing...
                 this.gHwnd.check_per_sec := hwnd
                 this.update_interval_per_sec()
             
-            ;~ ; Quick link to twitch rewards claim page
-            ;~ y := upd_gb_h + pad
-            ;~ Gui, Font, s10 Underline c00A2ED
-            ;~ Gui, Add, Text, w%gb_w% h50 x%x_left% y+%pad2% +HWNDhwnd, Open Twitch Rewards Page
-                ;~ this.add_control_method(hwnd, this, "open_url", this.url.twitch_rewards)
+            ; Quick link to twitch rewards claim page
+            y := last_gb + pad
+            Gui, Font, Bold
+            Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
+                last_gb := ql_gui_h
+            Gui, Font, s10 Norm Underline c00A2ED, Consolas
+            For index, data in link_list
+            {
+                y := (index = 1 ? pad2 : (ql_txt_h+padh))
+                Gui, Add, Text, w%ql_txt_w% h%ql_txt_h% xs+%pad% yp+%y% +HWNDhwnd, % data.txt
+                this.add_control_method(hwnd, this, "open_url", data.url)
+            }
+            Gui, Font
             
             ; Notify options
-            
+            y := last_gb + pad
+            Gui, Font, Bold
+            Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
+                last_gb := ql_gui_h
+            Gui, Font, s10 Norm cWhite
             
             ; Donations maybe?
-            ; Gui, Add, Checkbox, x%x_left% y+%pad% +HWNDhwnd, option1
+            ;y := last_gb + pad
+            ;Gui, Font, Bold
+            ;Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
+            ;    last_gb := ql_gui_h
+            ;Gui, Font, s10 Norm cWhite
             Return
         }
         
@@ -654,6 +687,7 @@ Class rust_checker
             GuiControlGet, state, , % hwnd                  ; Get check state
             this.notify_list[name] := state                 ; Update state into notify list
             this.save_settings("notify_list", name, state)  ; Save to settins file
+            this.heartbeat()                                ; Do a check
             Return
         }
         
@@ -672,7 +706,7 @@ Class rust_checker
                     Continue
                 Else
                 {
-                    MsgBox Change! Need to update!
+                    MsgBox, % "txt: " txt "`nuser.status: " user.status 
                     GuiControl,, % this.gHwnd[user.username].status_pic
                         , % this.path[(user.status ? "img_online" : "img_offline")]
                     GuiControl,, % this.gHwnd[user.username].status_txt
@@ -880,18 +914,9 @@ Class rust_checker
         GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.main_gui.gHwnd.updater_gb
         ; Set the button text
         Gui, Font, Norm cBlack
-        GuiControl, Text, % this.main_gui.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date :D")
+        GuiControl, Text, % this.main_gui.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
         ; Enable/disable
         GuiControl, % (update_found ? "Enable" : "Disable"), % this.main_gui.gHwnd.updater_btn
-        /*
-            GuiControl, +cDA4F49, Red
-            GuiControl,, Red, Red Text
-        return
-        
-        Black:
-            GuiControl, +c000000, Red
-            GuiControl,, Red, Black Text
-        */
         Return
     }
     
