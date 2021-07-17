@@ -566,33 +566,11 @@ Class rust_checker
             , padh      := pad / 2
             , x_left    := start_x + pad
             , gb_w      := max_w - pad
-            ; Updater
-              upd_gb_h  := 60
-            , upd_btn_w := gb_w - pad2
-            , upd_btn_h := upd_gb_h - pad3
-            ; Refresh Frequence
-              slide_min := 1
-            , slide_max := 10
-            , ref_def_h := 20
-            , ref_bud_w := 15
-            , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
-            , ref_txt_w := gb_w - pad2
-            , ref_gb_h  := (ref_def_h*2) + (pad*4)
-            ; Quick links
-              link_list := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
-                           ,{txt:"Streamer Drops Page"  , url:this.url.facepunch        }
-                           ,{txt:"AHK Drop Alert Home"  , url:this.url.git_homepage     } ]
-            , ql_txt_w  := gb_w - pad2
-            , ql_txt_h  := 16
-            , ql_gui_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad3
-            ; Notify Options
-              noti_list := [{}]
-            , noti_cb_w := gb_w - pad
-            , noti_cb_h := 16
-            , noti_gb_h := noti_list.MaxIndex() * (noti_cb_h + padh)
-            , 
             
             ; Updater section
+            upd_gb_h    := 60
+            , upd_btn_w := gb_w - pad2
+            , upd_btn_h := upd_gb_h - pad3
             Gui, Font, s10 Bold cFFAA00
             Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker:
                 this.ghwnd.updater_gb := hwnd
@@ -603,9 +581,17 @@ Class rust_checker
                 this.start_update_check_timer()
                 this.add_control_method(hwnd, this, "run_update")
             
-            ; Refresh frequency
-            Gui, Font, cWhite
+            ; Refresh Frequency
+            slide_min   := 1
+            , slide_max := 10
+            , ref_def_h := 20
+            , ref_bud_w := 15
+            , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
+            , ref_txt_w := gb_w - pad2
+            , ref_gb_h  := (ref_def_h*2) + (pad*4)
+            
             y := last_gb + pad
+            Gui, Font, Bold cWhite
             Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Streamer Check Frequency:
                 last_gb := ref_gb_h
             Gui, Font, s10 Norm
@@ -621,6 +607,13 @@ Class rust_checker
                 this.update_interval_per_sec()
             
             ; Quick link to twitch rewards claim page
+            link_list   := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
+                           ,{txt:"Streamer Drops Page"  , url:this.url.facepunch        }
+                           ,{txt:"AHK Drop Alert Home"  , url:this.url.git_homepage     } ]
+            , ql_txt_w  := gb_w - pad2
+            , ql_txt_h  := 16
+            , ql_gui_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad3
+            
             y := last_gb + pad
             Gui, Font, Bold
             Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
@@ -634,12 +627,30 @@ Class rust_checker
             }
             Gui, Font
             
-            ; Notify options
+            ; Notify Options
+            noti_list   := [{txt:"Open User Stream" , type:"stream" , def:False }
+                           ,{txt:"Pop-Up Window"    , type:"popup"  , def:True  }
+                           ,{txt:"System Beep"      , type:"beep"   , def:True  }
+                           ,{txt:"Run URL"          , type:"url"    , def:False }
+                           ,{txt:"Flashing Icon"    , type:"icon"   , def:True  }
+                           ,{txt:"Write to File"    , type:"file"   , def:False } ]
+            , noti_cb_w := gb_w - pad*3
+            , noti_cb_h := 16
+            , noti_gb_h := noti_list.MaxIndex() * (noti_cb_h + padh) + (pad*3)
+            
             y := last_gb + pad
-            Gui, Font, Bold
+            Gui, Font, Bold cWhite
             Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
-                last_gb := ql_gui_h
+                last_gb := noti_gb_h
             Gui, Font, s10 Norm cWhite
+            For index, data in noti_list
+            {
+                y := (index = 1 ? pad2 : (noti_cb_h+padh))
+                Gui, Add, Checkbox, w%noti_cb_w% h%noti_cb_h% xs+%pad% yp+%y% +HWNDhwnd, % data.txt
+                    this.add_control_method(hwnd, this, "notify_update", data.type, hwnd)
+                GuiControl,, % hwnd, % data.def
+            }
+            Gui, Font
             
             ; Donations maybe?
             ;y := last_gb + pad
@@ -647,6 +658,13 @@ Class rust_checker
             ;Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
             ;    last_gb := ql_gui_h
             ;Gui, Font, s10 Norm cWhite
+            Return
+        }
+        
+        notify_update(type, hwnd)
+        {
+            GuiControlGet, state,, % hwnd
+            this.save_settings("notify_pref", type, state)  ; Save to settins file
             Return
         }
         
@@ -1045,6 +1063,6 @@ It's free.ninety-nine for everyone. I believe in open source for most things. I 
 It burns when I pee. What should I do?  
 Always where a rubber, Jimmy. The sea can be dangerous. (Also, this is not AHK Rust Drop Checker question...)
 
-Will this notify me when my current drop is done?  
+Will this notify me when my current drop is done?   
 While I do not have that programmed in, it is something I could add down the line. So, yes, but not yet.
 */
