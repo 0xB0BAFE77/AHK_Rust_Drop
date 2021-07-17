@@ -93,17 +93,26 @@ Class rust_checker
                                ,ext             : "\.(\w+)\s*?$"
                                ,drop_pic_url    : "img\s*?src=""(.*?)"".*?title="
                                ,drop_name       : "class=""drop-name"".*?>(.*?)</" }
+    Static notify_opt       := [{type           :"stream" , txt:"Open User Stream" , def:False }
+                               ,{type           :"popup"  , txt:"Pop-Up Window"    , def:True  }
+                               ,{type           :"beep"   , txt:"System Beep"      , def:True  }
+                               ,{type           :"url"    , txt:"Run URL"          , def:False }
+                               ,{type           :"icon"   , txt:"Flashing Icon"    , def:True  }
+                               ,{type           :"file"   , txt:"Write to File"    , def:False } ]
     
     Start()
     {
         this.splash.start("Starting up`n" this.title)
-        OnExit(this.use_method(this, "shutdown"))
+        
+        ; Shutdown processes
+        this.splash.start("Setting`nShutdown`nFunctions")
+        , OnExit(this.use_method(this, "shutdown"))
         
         ; Create program folders
         this.splash.update("Creating`nFolders")
         , this.folder_check() ? this.error(A_ThisFunc, "Folder's cannot be created.", 1) : ""
         
-        
+        ; Get fresh streamer data
         this.splash.update("Downloading`nStreamer Data")
         , this.get_streamer_data() ? this.error(A_ThisFunc, "Error getting streamer data.", 1) : ""
         
@@ -165,14 +174,34 @@ Class rust_checker
         For index, user in this.streamer_data                       ; Compare fresh data to old notify list
         {
             If (user.status) && (this.notify_list[user.username])   ; 
-                this.notify_user(user.username)
+                this.notify_user(user)
         }
         ; UPdate notify list
     }
     
-    notify_user(name)
+    notify_user(user_data)
     {
         TrayTip, Online!, %name% is online! Make the icon flash!, 3
+        ;For index, option in this.notify_opt
+        ;    GuiControlGet, var, subcommand, hwnd, value
+        ; If stream
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_stream
+        (state) ? this.open_url(user_data.profile_url) : ""
+        ; If popup
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_popup
+        (state) ? this.msg(user_data.username " is now online!!!") : ""
+        ; If beep
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_beep
+        (state) ? this.play_beep() : ""
+        ; If url
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_url
+        (state) ? this.() : ""
+        ; If icon
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_icon
+        (state) ? this.() : ""
+        ; If file
+        GuiControlGet, state,, % this.main_gui.gHwnd.notify_file
+        (state) ? this.() : ""
         Return
     }
     
@@ -416,7 +445,7 @@ Class rust_checker
             , gui_h         := 800
             , card_w        := 200
             , card_h        := 270
-            , btn_w         := 80
+            , btn_w         := 90
             , btn_h         := 30
             , strm_total    := this.streamer_data.MaxIndex()
             , cards_per_col := (strm_total < 10) ? 3
@@ -461,17 +490,18 @@ Class rust_checker
             Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1, FAKE ERROR MESSAGE FOR TESTING!
                 this.gHwnd.error_txt
             
-            ; Add exit and min button
+            ; Add exit button
             x := cards_per_col * (card_w + pad) + opt_w - btn_w
+            Gui, Font, s10
             Gui, Add, Button, w%btn_w% h%btn_h% x%x% y+-%btn_h% HWNDhwnd, Exit
                 this.add_control_method(hwnd, this, "quit")
-            ; Minimize button
-            x := card_w + pad + btn_w
-            Gui, Font, s10
-            Gui, Add, Button, w%btn_w% h%btn_h% x+-%x% yp HWNDhwnd, Minimize
+            ; Add minimize button
+            x := pad + btn_w
+            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Minimize
+            ; Add overlay button
+            x := (pad + btn_w) * 2
+            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Overlay Mode
             
-            ; Clean up button
-            ;Gui, Add, Button, w%btn_w% h%btn_h% x+%pad2% yp HWNDhwnd, Clean Up
             ; Allows the gui to be clicked and dragged
             bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
             OnMessage(0x0201, bf)
@@ -552,14 +582,9 @@ Class rust_checker
             Return
         }
         
-        ;gHwnd.udpater_btn
-        ;gHwnd.update_txt
-        ;gHwnd.interval_sld
-        ;gHwnd.
-        ;gHwnd.
         add_gui_options(start_x, start_y, max_w, max_h:=0)
         {
-            ; Std
+            ; Standard
             pad         := 10
             , pad2      := pad * 2
             , pad3      := pad * 3
@@ -589,7 +614,6 @@ Class rust_checker
             , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
             , ref_txt_w := gb_w - pad2
             , ref_gb_h  := (ref_def_h*2) + (pad*4)
-            
             y := last_gb + pad
             Gui, Font, Bold cWhite
             Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Streamer Check Frequency:
@@ -613,7 +637,6 @@ Class rust_checker
             , ql_txt_w  := gb_w - pad2
             , ql_txt_h  := 16
             , ql_gui_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad3
-            
             y := last_gb + pad
             Gui, Font, Bold
             Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
@@ -634,10 +657,9 @@ Class rust_checker
                            ,{txt:"Run URL"          , type:"url"    , def:False }
                            ,{txt:"Flashing Icon"    , type:"icon"   , def:True  }
                            ,{txt:"Write to File"    , type:"file"   , def:False } ]
-            , noti_cb_w := gb_w - pad*3
+            , noti_cb_w := gb_w - pad2
             , noti_cb_h := 16
-            , noti_gb_h := noti_list.MaxIndex() * (noti_cb_h + padh) + (pad*3)
-            
+            , noti_gb_h := noti_list.MaxIndex() * (noti_cb_h + padh) + (pad2)
             y := last_gb + pad
             Gui, Font, Bold cWhite
             Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
@@ -647,8 +669,10 @@ Class rust_checker
             {
                 y := (index = 1 ? pad2 : (noti_cb_h+padh))
                 Gui, Add, Checkbox, w%noti_cb_w% h%noti_cb_h% xs+%pad% yp+%y% +HWNDhwnd, % data.txt
+                    GuiControl,, % hwnd, % data.def
+                    this.gHwnd["notify_" data.type] := hwnd
                     this.add_control_method(hwnd, this, "notify_update", data.type, hwnd)
-                GuiControl,, % hwnd, % data.def
+                    this.notify_update(data.type, hwnd)
             }
             Gui, Font
             
@@ -992,10 +1016,27 @@ Class rust_checker
         Return web.ResponseText
     }
     
+    play_beep()
+    {
+        SoundBeep, 
+        Return
+    }
+    
+    play_ff_fanfare()
+    {
+        SoundBeep, 
+        Return
+    }
+    
     open_url(url)
     {
         Run, % url
         Return
+    }
+    
+    msg(msg, opt:=0x0)
+    {
+        MsgBox, % opt, % this.title, % msg
     }
     
     error(call:="func here", msg:="msg here", option:=0)
