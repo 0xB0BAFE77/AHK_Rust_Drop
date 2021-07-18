@@ -1018,13 +1018,13 @@ Class rust_checker
     
     play_beep()
     {
-        SoundBeep, 
+        ;SoundBeep, 
         Return
     }
     
     play_ff_fanfare()
     {
-        SoundBeep, 
+        ;SoundBeep, 
         Return
     }
     
