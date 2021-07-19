@@ -17,15 +17,6 @@ Return
 Return
 
 /*
-; On load > make gui
-;   Gui should have a close button and minimize button
-; Scrape https://twitch.facepunch.com/ to see if 
-;   Check for keywords online offline'
-; If scrape returns successful, populate gui with people
-;   + Set timer to continuously check the site every X amount of seconds
-*/
-
-/*
 error codes
 -1 = HTML can't be downloaded
 -2 = Error parsing HTML
@@ -56,7 +47,6 @@ Class rust_checker
             , html          := ""
             , err_last      := ""
             , err_log       := ""
-            , checker       := True
             , notify_list   := {}
             , update_freq   := 60
     ; Object tracking
@@ -106,7 +96,7 @@ Class rust_checker
                                ,{type               :"icon"   , txt:"Flashing Icon"    , def:True  }
                                ,{type               :"file"   , txt:"Write to File"    , def:False } ]
     Static live_stream      := {active              :False
-                               ,user                :""
+                               ,username            :""
                                ,pid                 :0
                                ,time                :0}
     Static ghwnd            := {"notify_stream"     : ""
@@ -187,10 +177,10 @@ Class rust_checker
     
     heartbeat()
     {
-        this.next_beat()                ; Set when next update should occur
-        , this.get_streamer_data()      ; Get fresh data
+        this.get_streamer_data()        ; Get fresh data
         , this.main_gui.update_gui()    ; Update GUI with new info
         , this.notify_check()           ; See if a notification needs to happen
+        , this.next_beat()              ; Set when next update should occur
         Return
     }
     
@@ -223,7 +213,7 @@ Class rust_checker
     {
         ; If stream
         GuiControlGet, state,, % this.main_gui.gHwnd.notify_stream
-        (state) ? this.launch_streamer(user_data) : ""
+        (state) ? this.streamer_maintenance(user_data) : ""
         ; If popup
         GuiControlGet, state,, % this.main_gui.gHwnd.notify_popup
         (state) ? this.msg(user_data.username " is now online!!!") : ""
@@ -239,59 +229,80 @@ Class rust_checker
         Return
     }
     
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ;;;;;;;;;;;;;;;;;;;;;;;; TRYING TO FIGURE THIS SHIT OUT!!! ;;;;;;;;;;;;;;;;;;;;;
-    launch_streamer(user_data)
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ; .active
+    ; .username
+    ; .pid
+    ; .time
+    streamer_maintenance(user_data)
     {
         ; at this point a check has run, they're checked, and they're online
         Static hr_as_ms := 60*60*1000
-        Static wait_list:= []
+        Static the_line := [] ; change this to the_line[] and always check the_line.1 as current user
         strm := this.live_stream
-        TrayTip, title, % "user_data.username: " user_data.username "`nstrm.user: " strm.user "`nstrm.time: " strm.time "`nA_NowUTC: " A_NowUTC 
+        TrayTip, title, % "user_data.username: " user_data.username "`nstrm.user: " strm.user "`nstrm.time: " strm.time "`nA_TickCount: " A_TickCount 
         
-        ; Wait list maintenence
-        If (wait_list.MaxIndex > 0)
+        ; Check if user needs t o be added to the line
+        is_in_line := False
+        For index, user in the_line
+            If (is_in_line := (user_data.username = user.username))
+                Break
+        If !is_in_line
+            the_line.Push(user_data)
+        
+        ; Check if there's an active streamer
+        If !this.live_stream.active
+            this.streamer_launch(the_line.1)
+        Else If (the_line.1.username = this.live_stream.username)
         {
-            match := False
-            For index, user in wait_list
-                If (match := (user_data.username = user.username))
-                    Break
-            
-            If !match
-            {
-                MsgBox, 0x4, Warning, % "A stream opened earlier has not been running the required drop time."
-                    . "`nDo you still want to launch " user_data.username "'s page?"
-                    . "`n`nClick Yes to launch and No defer this uer until the current stream finishes."
-                IfMsgBox, Yes
-                    this.kill_stream(strm.pid)
-                    , wait_list.InsertAt(1) := user_data
-                Else wait_list.Push(user_data)
-            }
+            time_running := this.readable_time(this.live_stream.time, A_TickCount)
+            MsgBox, 0x4, Warning, % "Another stream was opened earlier and has not been running the required drop time."
+                . "`nDo you still want to launch " user_data.username "'s page?"
+                . "`n`nClick Yes to launch and No defer this uer until the current stream finishes."
+            IfMsgBox, Yes
+                this.kill_stream(strm.pid)
+                , wait_list.InsertAt(1) := user_data
+            Else wait_list.Push(user_data)
         }
+        ;Else If (strm.username != the_line.1.username)
         
         ; If no one is streaming
-        If (strm.active = 1)
-        {
-            If ((A_NowUTC - strm.time) < (user_data.drop_hours * hr_as_ms))
-                Return
-            GuiControl,, this.gHwnd[user_data.username].notify_cb, 0
-            this.kill_stream(strm.pid)
-        }
-        Else If 
-        {
-            strm.active := True
-            , strm.pid  := this.open_url(user_data.profile_url)
-            , strm.time := A_NowUTC
-            , strm.user := user_data.username
-        }
-        Else If (user_data.username != strm.user)
-        {
-        }
-        
-        ; Set Timer for being done.
-        bf := ObjBindMethod(this, "kill_stream", strm.pid)
-        SetTimer, % bf, -10000 ; % -1 * hr_as_ms * user_data.drop_hours
+        ;If (strm.active = 1)
+        ;{
+        ;    If ((A_TickCount - strm.time) < (user_data.drop_hours * hr_as_ms))
+        ;        Return
+        ;    GuiControl,, this.gHwnd[user_data.username].notify_cb, 0
+        ;    this.kill_stream(strm.pid)
+        ;}
+        ;Else If 
+        ;{
+        ;    strm.active := True
+        ;    , strm.pid  := this.open_url(user_data.profile_url)
+        ;    , strm.time := A_TickCount
+        ;    , strm.user := user_data.username
+        ;}
+        ;Else If (user_data.username != strm.user)
+        ;{
+        ;    Return
+        ;}
+        ;
+        ;; Set Timer for being done.
+        ;bf := ObjBindMethod(this, "kill_stream", strm.pid)
+        ;SetTimer, % bf, -10000 ; % -1 * hr_as_ms * user_data.drop_hours
         Return
     }
+    
+    streamer_launch(user_data)
+    {
+        live_stream.active  := 1
+        live_stream.username:= user_data.username
+        live_stream.pid     := this.open_url(user_data.profile_url)
+        live_stream.time    := A_TickCount
+        Return
+    }
+
     
     get_notify_url()
     {
@@ -567,7 +578,7 @@ Class rust_checker
             , err_gb_h      := 40
             , err_txt_w     := err_gb_w - 2
             
-            Gui, Main:New, +Caption +HWNDhwnd, % this.title
+            Gui, Main:New, +Caption -ToolWindow +HWNDhwnd, % this.title
                 this.gHwnd.gui_main := hwnd
             Gui, Main:Default
             Gui, Margin, % pad, % pad
@@ -598,9 +609,9 @@ Class rust_checker
             Gui, Font, s10
             Gui, Add, Button, w%btn_w% h%btn_h% x%x% y+-%btn_h% HWNDhwnd, Exit
                 this.add_control_method(hwnd, this, "quit")
-            ; Add minimize button
+            ; Add hide button
             x := pad + btn_w
-            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Minimize
+            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Hide
                 this.add_control_method(hwnd, this, "hide")
             ; Add Uncheck all button
             x := pad + btn_w
@@ -618,9 +629,11 @@ Class rust_checker
             
             ; Allows the gui to be clicked and dragged
             bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
-            OnMessage(0x0201, bf)
+            OnMessage(0x201, bf)
             bf := ObjBindMethod(this, "WM_EXITSIZEMOVE", A_Gui)
-            OnMessage(0x0232, bf)
+            OnMessage(0x232, bf)
+            bf := ObjBindMethod(this, "WM_CLOSE", A_Gui)
+            OnMessage(0x10, bf)
             
             Return
         }
@@ -789,14 +802,54 @@ Class rust_checker
             }
             Gui, Font
             
+            ; Overlay settings
+            ; Let's build a list:
+            ; box width
+            ; box height
+            ; # of cols
+            ; bg color
+            ; online color
+            ; offline color
+            ; flash color
+            ; opacity
+            ; 
+            
+            ;~ opt_list := [{txt:"Opacity_Slider"    ,type:"Slider"   ,opt:"" ,}
+                        ;~ ,{txt:"Box_Width_Edit"    ,type:"Edit"     ,opt:"" ,}
+                        ;~ ,{txt:"Box_Height_Edit"   ,type:"Edit"     ,opt:"" ,}
+                        ;~ ,{txt:"Columns"           ,type:"Slider"   ,opt:"" ,}
+                        ;~ ,{txt:"Lock"              ,type:"Checkbox" ,opt:"" ,}
+                        ;~ ,{txt:"Color: Background" ,type:"Pic"      ,opt:"" ,,color:"black"  }
+                        ;~ ,{txt:"Color: Online"     ,type:"Pic"      ,opt:"" ,,color:"green"  }
+                        ;~ ,{txt:"Color: Offline"    ,type:"Pic"      ,opt:"" ,,color:"red"    }
+                        ;~ ,{txt:"Color: Flash"      ,type:"Pic"      ,opt:"" ,,color:"fuschia"} ]
+            
+            opt_list := [{txt:"Opacity" ,type:"Slider"      ,opt:"", rangel:1, rangeh:this.streamer_data.MaxIndex()}
+                        ,{txt:"Columns" ,type:"Slider"      ,opt:"", rangel:1, rangeh:100}
+                        ,{txt:"Lock"    ,type:"Checkbox"    ,opt:""}]
+            txt_h       := 16
+            txt_w       := gb_w - pad2
+            buddy_h     := 20
+            buddy_w     := 15
+            cb_h        := 16
+            cb_w        := gb_w - pad2
+            slider_h    := 20
+            slider_w    := gb_w - (buddy_w*2) - pad
+            ovr_gb_h    := (3*txt_h) + (2*slider_h) + (pad*5) + pad_ul
+            y := last_gb + pad
+            Gui, Font, % font_gb
+            Gui, Add, Groupbox, w%gb_w% h%ovr_gb_h% xs ys+%y% +HWNDhwnd Section, Overlay Settings:
+                last_gb := ovr_gb_h
+            Gui, Font, % font_def
+            Gui, Add, Checkbox, w%cb_w% h%cb_h% xs+%pad% ys+%pad_gb%, Click-Through (Lock)
+            
             ; Donations quick links
-            ; Quick link to twitch rewards claim page
             link_list   := [{txt:"Ko-Fi Donation"   , url:this.url.patreon  }
                            ,{txt:"Patreon Donation" , url:this.url.kofi     } ]
             , ql_txt_w  := gb_w - pad2
             , ql_txt_h  := 16
             , ql_gb_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad_ul
-            y := max_h - (pad + ql_gb_h)
+            y := max_h - ql_gb_h + pad
             Gui, Font, % font_gb
             Gui, Add, Groupbox, w%gb_w% h%ql_gb_h% xs y%y% +HWNDhwnd Section, Donate:
                 last_gb := ql_gb_h
@@ -917,7 +970,6 @@ Class rust_checker
                 If !InStr(con, "button") && !InStr(con, "trackbar321") && !InStr(con, "edit")
                     SendMessage, 0x00A1, 2,,, A
             }
-            
             Return
         }
         
@@ -957,7 +1009,7 @@ Class rust_checker
             (this.last_y*0 = 0 ? "" : this.last_y := 0)
             Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % this.gui_name ;Center, % this.title
             this.visible := True
-            this.systray.update_show_hide()
+            this.systray.update_tray_show_hide()
         }
         
         Hide()
@@ -965,7 +1017,7 @@ Class rust_checker
             this.save_last_xy()
             Gui, Main:Hide
             this.visible := False
-            this.systray.update_show_hide()
+            this.systray.update_tray_show_hide()
         }
         
         Toggle()
@@ -1049,6 +1101,7 @@ Class rust_checker
     ; Donate
     Class systray extends rust_checker
     {
+        Static flash_state := 0
         create()
         {
             Menu, Tray, NoStandard                              ; Clean slate
@@ -1081,28 +1134,33 @@ Class rust_checker
             Menu, Tray, Icon, % this.path.img_rust_symbol     ; Set Icon
         }
         
-        update_show_hide()
+        update_tray_show_hide()
         {
             Menu, Tray, Rename, 1&, % (this.main_gui.visible ? "Hide" : "Show")
             Return
         }
         
-        icon_flash(stop=0)
+        icon_flash()
         {
-            Static  running     := 0
-                    , toggle    := 0
+            Static  toggle      := 0
+                    , running   := 0
+            GuiControlGet, flash,, % this.gHwnd.notify_icon
+            this.flash_state := flash
+            , toggle    := !toggle
+            , bf        := ObjBindMethod(this, "icon_flash")
+            Menu, Tray, Icon, % this.path["img_rust_symbol" (toggle ? "" : "_2")]
             
-            If running && !stop
+            If !this.flash_state
+            {
+                SetTimer, % bf, Delete
+                running := 0
+                Return
+            }
+            
+            If (running && !this.flash_state)
                 Return
             
-            path :="img_rust_symbol" ((toggle := !toggle) ? "" : "_2")
-            Menu, Tray, Icon, % this.path[path]
-            GuiControlGet, state,, % this.gHwnd.notify_icon
-            bf      := ObjBindMethod(this, "icon_flash", state ? 1 : 0)
-            running := state ? 1 : 0
-            SetTimer, % bf, % (state ? -650 : "Delete")
-            state   ? "" : this.icon_reset()
-            
+            SetTimer, % bf, % (state ? 650 : "Delete")
             Return
         }
         
@@ -1111,6 +1169,15 @@ Class rust_checker
     Class overlay extends rust_checker
     {
         Static  visible := False
+        create()
+        {
+            this.ghwnd.overlay := {}
+            
+            Gui, overlay:New, -Caption -ToolWindow +HWNDhwnd
+            
+            Return
+        }
+      
         Show()
         {
             MsgBox, Overlay not implemented yet.
@@ -1270,6 +1337,26 @@ Class rust_checker
     {
         Run, % url,,, pid
         Return pid
+    }
+    
+    readable_time(ms_in_1, ms_in_2 := "")
+    {
+        static ms_convert  := [{txt:"day" , ms:86400000}
+                              ,{txt:"hour", ms: 3600000}
+                              ,{txt:"min" , ms:   60000}
+                              ,{txt:"sec" , ms:    1000}]
+        result      := ""
+        , time      := ""
+        , ms_total  := (ms_in_2 != "")
+                    ? Abs(ms_in_1 - ms_in_2)
+                    : ms_in_1
+        For index, set in ms_convert
+            time := Floor(ms_total/set.ms)
+            , (time > 0)
+                ? (result .= time " " set.txt " "
+                  ,ms_total -= time * set.ms )
+                : ""
+        Return result
     }
     
     msg(msg, opt:=0x0)
