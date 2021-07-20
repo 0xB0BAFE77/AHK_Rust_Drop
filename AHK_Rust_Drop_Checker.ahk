@@ -184,10 +184,10 @@ Class rust_checker
         Return
     }
     
-    next_beat(time:=0)
+    next_beat(time=0)
     {
         Static bf := ""
-        (bf = "")   ? bf := ObjBindMethod(this, "heartbeat") : ""
+        (bf = "") ? bf := ObjBindMethod(this, "heartbeat") : ""
         time := (time = 0)  ? 1000 * 60 / this.interval : time * 1000
         SetTimer, % bf, Delete
         SetTimer, % bf, % -1 * Abs(time)
@@ -199,12 +199,12 @@ Class rust_checker
         notify := 0
         For index, user in this.streamer_data                       ; Compare fresh data to old notify list
             If (user.status) && (this.notify_list[user.username])   ; 
-                this.notify_user(user)
-                , notify := 1
+                If (notify := this.notify_user(user))
+                    Break 
         
         ; If not one was found, the flashing stops.
         If (notify = 0)
-            this.systray.icon_flash(1)
+            this.systray.flash_stop := True
         
         Return
     }
@@ -222,7 +222,7 @@ Class rust_checker
         (state) ? this.play_beep() : ""
         ; If icon
         GuiControlGet, state,, % this.main_gui.gHwnd.notify_icon
-        (state) ? this.systray.icon_flash(0) : ""
+        (state) ? this.systray.icon_flash() : ""
         ; If file
         GuiControlGet, state,, % this.main_gui.gHwnd.notify_file
         (state) ? this.write_to_file(user_data) : ""
@@ -296,10 +296,10 @@ Class rust_checker
     
     streamer_launch(user_data)
     {
-        live_stream.active  := 1
-        live_stream.username:= user_data.username
-        live_stream.pid     := this.open_url(user_data.profile_url)
-        live_stream.time    := A_TickCount
+        this.live_stream.active   := 1
+        this.live_stream.username := user_data.username
+        this.live_stream.pid      := this.open_url(user_data.profile_url)
+        this.live_stream.time     := A_TickCount
         Return
     }
 
@@ -1101,7 +1101,8 @@ Class rust_checker
     ; Donate
     Class systray extends rust_checker
     {
-        Static flash_state := 0
+        Static flash_stop := 0
+        
         create()
         {
             Menu, Tray, NoStandard                              ; Clean slate
@@ -1140,27 +1141,34 @@ Class rust_checker
             Return
         }
         
+        icon_flash_stop()
+        {
+            this.flash_stop := True
+            Return
+        }
+        
         icon_flash()
         {
             Static  toggle      := 0
                     , running   := 0
-            GuiControlGet, flash,, % this.gHwnd.notify_icon
-            this.flash_state := flash
-            , toggle    := !toggle
-            , bf        := ObjBindMethod(this, "icon_flash")
-            Menu, Tray, Icon, % this.path["img_rust_symbol" (toggle ? "" : "_2")]
             
-            If !this.flash_state
+            toggle := !toggle
+            Menu, Tray, Icon, % this.path["img_rust_symbol" (toggle ? "" : "_2")]
+            bf := ObjBindMethod(this, "icon_flash")
+            
+            If (this.flash_stop)
             {
+                this.flash_stop := False
                 SetTimer, % bf, Delete
                 running := 0
                 Return
             }
-            
-            If (running && !this.flash_state)
+            Else If (running)
                 Return
             
-            SetTimer, % bf, % (state ? 650 : "Delete")
+            SetTimer, % bf, Delete
+            running := 1
+            SetTimer, % bf, 850
             Return
         }
         
