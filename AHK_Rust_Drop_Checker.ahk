@@ -1,17 +1,17 @@
 #SingleInstance Force
 #Warn
 #NoEnv
-rust_checker.Start()
+rust_dc.Start()
 Return
 
-*F1::rust_checker.main_gui.Toggle()
+*F1::rust_dc.main_gui.Toggle()
 *Escape::ExitApp
 
 ~^s::
     IfWinActive, % A_ScriptName
     {
         Run, % A_ScriptFullPath
-        Sleep, 100
+        Sleep, 1
         ExitApp
     }
 Return
@@ -40,25 +40,25 @@ Updater/Version Checker
 
 */
 
-Class rust_checker
+Class rust_dc
 {
     Static  title           := "AHK Rust Drop Checker"
-            , version       := "1.0.0.1"
+            , version       := "1.0.0"
             , html          := ""
-            , err_last      := ""
             , err_log       := ""
+            , err_last      := ""
             , notify_list   := {}
-            , update_freq   := 60
+    
     ; Object tracking
-    Static  streamer_data   := {0:{profile_url      : ""    ; URL to user's twitch or youtube profile (whichever was provided by the site)
-                                  ,avatar_url       : ""    ; URL to user's gaming avatar
-                                  ,avatar_loc       : ""    ; Location on disk where avatar is saved
-                                  ,username         : ""    ; User's username (Redudant, right?)
-                                  ,status           : 0     ; User's status of online or offline
-                                  ,drop_pic_url     : ""    ; URL picture of this user's Rust drop
-                                  ,drop_pic_loc     : ""    ; Location on disk where Rust drop picture is saved
-                                  ,drop_name        : ""    ; The name of the drop
-                                  ,drop_hours       : 2 } } ; Watch time need to get drop
+    Static  streamer_data   := [{profile_url      : ""    ; URL to user's twitch or youtube profile (whichever was provided by the site)
+                                ,avatar_url       : ""    ; URL to user's gaming avatar
+                                ,avatar_loc       : ""    ; Location on disk where avatar is saved
+                                ,username         : ""    ; User's username (Redudant, right?)
+                                ,status           : 0     ; User's status of online or offline
+                                ,drop_pic_url     : ""    ; URL picture of this user's Rust drop
+                                ,drop_pic_loc     : ""    ; Location on disk where Rust drop picture is saved
+                                ,drop_name        : ""    ; The name of the drop
+                                ,drop_hours       : 2 }]  ; Watch time need to get drop
     Static  path            := {app                 : A_AppData "\AHK_Rust_Drops"
                                ,img                 : A_AppData "\AHK_Rust_Drops\img"
                                ,temp                : A_AppData "\AHK_Rust_Drops\temp"
@@ -69,14 +69,14 @@ Class rust_checker
                                ,img_rust_symbol_2   : A_AppData "\AHK_Rust_Drops\img\img_rust_symbol_2.png"
                                ,img_online          : A_AppData "\AHK_Rust_Drops\img\img_Online.png"
                                ,img_offline         : A_AppData "\AHK_Rust_Drops\img\img_Offline.png"
-                               ,write_file          : ""}
+                               ,notify_log          : A_AppData "\AHK_Rust_Drops\live_updates.txt"}
     Static  url             := {git_homepage        : "https://github.com/0xB0BAFE77/AHK_Rust_Drop"
                                ,img_online          : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Online%20Blank%203D.png"
                                ,img_offline         : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Offline%20Blank%203D.png"
                                ,img_rust_symbol     : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol.png"
                                ,img_rust_symbol_2   : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol_Flash.png"
                                ,git_ver             : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
-                               ,ahk_rust_checker    : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/AHK_Rust_Drop_Checker.ahk"
+                               ,ahk_rust_checker    : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/AHK_rust_dc.ahk"
                                ,update              : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,twitch_rewards      : "https://www.twitch.tv/drops/inventory"
                                ,kofi                : "https://ko-fi.com/0xb0bafe77"
@@ -123,6 +123,8 @@ Class rust_checker
     {
         this.splash.start("Starting up`n" this.title)
         
+        this.error("test")
+        
         ; Set shutdown processes
         this.splash.start("Setting`nShutdown`nFunctions")
         , OnExit(this.use_method(this, "shutdown"))
@@ -133,7 +135,7 @@ Class rust_checker
         
         ; Get fresh streamer data
         this.splash.update("Downloading`nStreamer Data")
-        , this.get_streamer_data() ? this.error(A_ThisFunc, "Error getting streamer data.", 1) : ""
+        , this.get_streamer_data()
         
         ; Create streamer folders
         this.splash.update("Creating`nStreamer`nFolders")
@@ -212,20 +214,43 @@ Class rust_checker
     notify_user(user_data)
     {
         ; If stream
-        GuiControlGet, state,, % this.main_gui.gHwnd.notify_stream
-        (state) ? this.streamer_maintenance(user_data) : ""
+        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_stream
+        ;~ (state) ? this.streamer_maintenance(user_data) : ""
         ; If popup
         GuiControlGet, state,, % this.main_gui.gHwnd.notify_popup
-        (state) ? this.msg(user_data.username " is now online!!!") : ""
-        ; If beep
-        GuiControlGet, state,, % this.main_gui.gHwnd.notify_beep
-        (state) ? this.play_beep() : ""
-        ; If icon
-        GuiControlGet, state,, % this.main_gui.gHwnd.notify_icon
-        (state) ? this.systray.icon_flash() : ""
-        ; If file
-        GuiControlGet, state,, % this.main_gui.gHwnd.notify_file
-        (state) ? this.write_to_file(user_data) : ""
+        (state) ? this.notify_popup(user_data) : ""
+        ;~ ; If beep
+        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_beep
+        ;~ (state) ? this.play_beep() : ""
+        ;~ ; If icon
+        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_icon
+        ;~ (state) ? this.systray.icon_flash() : ""
+        ;~ ; If file
+        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_file
+        ;~ (state) ? this.write_to_file(user_data) : ""
+        Return
+    }
+    
+    notify_popup(user)
+    {
+        Static active_popup := False
+               ,snooze      := 0
+        
+        If active_popup
+            Return
+        
+        If (A_TickCount < snooze_time)
+            Return
+        
+        active_popup := True
+        MsgBox, % opt, Online!
+            , % user.username " is now online!"
+            . "`n`nHit yes to snooze popups for 15 minutes."
+            . "`nHit no to disable popups."
+        IfMsgBox, Yes
+            snooze_time := A_TickCount + (15 * 50 * 1000)
+        Else
+        active_popup := False
         Return
     }
     
@@ -240,7 +265,7 @@ Class rust_checker
     {
         ; at this point a check has run, they're checked, and they're online
         Static hr_as_ms := 60*60*1000
-        Static the_line := [] ; change this to the_line[] and always check the_line.1 as current user
+        Static the_line := []
         strm := this.live_stream
         TrayTip, title, % "user_data.username: " user_data.username "`nstrm.user: " strm.user "`nstrm.time: " strm.time "`nA_TickCount: " A_TickCount 
         
@@ -331,10 +356,12 @@ Class rust_checker
     
     get_streamer_data()
     {
-        err := this.update_streamer_html()  ? -1  ; Get HTML or -1 if error
-            :  this.parse_streamer_html()   ? -2  ; Parse HTML or -2 error
-            :                                  0  ; Else 0 for success
-        Return err
+        this.update_streamer_html()
+        MsgBox, % this.html
+        this.parse_streamer_html()
+        MsgBox, done parsing
+        
+        Return
     }
     
     folder_check()
@@ -394,6 +421,7 @@ Class rust_checker
         ; Make sure streamer data is there
         If !IsObject(this.streamer_data)
             Return -3
+        MsgBox 2
         
         ; Loop through each streamer, download, and save their avatars and item drops
         For index, user in this.streamer_data
@@ -405,7 +433,7 @@ Class rust_checker
                 , file      := type "." ext
                 , this.streamer_data[index][type "_loc"] := path "\" file
                 , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
-        
+        MsgBox 3
         ; Get downloadable images
         For key, value in this.url
             InStr(value, ".png")
@@ -420,21 +448,34 @@ Class rust_checker
     ; Returns 1 = success, 0 = failure
     update_streamer_html()
     {
-        this.html   := ""
-        , status    := 0
-        , web       := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        Static  retry := 5
         
+        this.html   := ""
+        , web       := ComObjCreate("WinHttp.WinHttpRequest.5.1")
         Try
             web.Open("GET", this.url.facepunch), web.Send()
-        Catch
-            this.error(A_ThisFunc, "Error getting data from site: " this.url.facepunch)
-            , status := 1
-        this.html := web.ResponseText
+        Catch status
+        {
+            this.error(A_ThisFunc, msg:="Error trying to get HTML from:`n" this.url.facepunch, option:=0)
+        }
         
-        Return status
+        If (Retry < 1)
+            this.error(A_ThisFunc, "Error getting data from site: " this.url.facepunch)
+        Else If (web.ResponseText = "")
+        {
+            retry--
+            bf := ObjBindMethod(this, "update_streamer_html")
+            SetTimer, % bf, -100
+        }
+        Else
+            this.html := web.ResponseText
+        
+        
+        
+        Return
     }
     
-    ; rust_checker.streamer_data properties:
+    ; rust_dc.streamer_data properties:
     ; .profile_url      URL to user's twitch or youtube profile (whichever was provided by the site)
     ; .avatar_url       URL to user's gaming avatar
     ; .avatar_loc       Location on disk where avatar is saved
@@ -551,7 +592,7 @@ Class rust_checker
         Return
     }
     
-    Class main_gui extends rust_checker
+    Class main_gui extends rust_dc
     {
         Static  gui_name        := "Main"
                 , visible       := True
@@ -632,9 +673,6 @@ Class rust_checker
             OnMessage(0x201, bf)
             bf := ObjBindMethod(this, "WM_EXITSIZEMOVE", A_Gui)
             OnMessage(0x232, bf)
-            bf := ObjBindMethod(this, "WM_CLOSE", A_Gui)
-            OnMessage(0x10, bf)
-            
             Return
         }
         
@@ -908,7 +946,7 @@ Class rust_checker
         start_update_check_timer()
         {
             bf  := ObjBindMethod(this, "update_check")
-            SetTimer, % bf, % Abs(this.update_freq) * -1000
+            SetTimer, % bf, -60000
             Return
         }
         
@@ -1028,7 +1066,7 @@ Class rust_checker
         }
     }
     
-    Class splash extends rust_checker
+    Class splash extends rust_dc
     {
         Static  font_opt   := "s20 Bold "
         start(msg)
@@ -1099,7 +1137,7 @@ Class rust_checker
     ; ---
     ; Exit
     ; Donate
-    Class systray extends rust_checker
+    Class systray extends rust_dc
     {
         Static flash_stop := 0
         
@@ -1174,7 +1212,7 @@ Class rust_checker
         
     }
     
-    Class overlay extends rust_checker
+    Class overlay extends rust_dc
     {
         Static  visible := False
         create()
@@ -1323,15 +1361,15 @@ Class rust_checker
     play_beep()
     {
         Static running := False
+        
         If running
             Return
+        
         running := True
-        num := -1
         Loop, 5
-        {
             SoundPlay, % "*" 16
-        }
         running := False
+        Sleep, 1
         Return
     }
     
@@ -1372,12 +1410,31 @@ Class rust_checker
         MsgBox, % opt, % this.title, % msg
     }
     
+    ; Makes the 
+    err_notify_color_changer(rgb=0xFF0000)
+    {
+        If (rgb >= 0xFFFFFF)
+            Return
+        GuiControl,, % this.gHwnd.error_txt 
+        rgb += 0x001111
+        bf := ObjBindMethod(this, "err_notify_color_changer", rgb)
+        SetTimer, % bf, -500
+        Return
+    }
+    
+    ; Options:
+    ; 0 = just log error
+    ; 1 = Verbose error message
+    ; -1 = Close script
     error(call:="func here", msg:="msg here", option:=0)
     {
+        ; Log error
         this.err_last   := A_Now "`nCall: " call "`nMessage: " msg
         this.err_log    .= this.err_last "`n`n"
-        MsgBox, % this.err_last
-        
+        ; Update gui
+        GuiControl,, % this.gHwnd.error_txt, % this.err_last
+        this.err_notify_color_changer()
+        ; Handle options
         If (option = -1)
             ExitApp
         If (option = 1)
@@ -1386,7 +1443,6 @@ Class rust_checker
             IfMsgBox, Yes
                 Reload
         }
-        
         Return 0
     }
     
