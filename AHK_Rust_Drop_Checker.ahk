@@ -54,7 +54,7 @@ Class rust_dc
                                 ,avatar_url       : ""    ; URL to user's gaming avatar
                                 ,avatar_loc       : ""    ; Location on disk where avatar is saved
                                 ,username         : ""    ; User's username (Redudant, right?)
-                                ,status           : 0     ; User's status of online or offline
+                                ,online           : 0     ; User's online status
                                 ,drop_pic_url     : ""    ; URL picture of this user's Rust drop
                                 ,drop_pic_loc     : ""    ; Location on disk where Rust drop picture is saved
                                 ,drop_name        : ""    ; The name of the drop
@@ -85,7 +85,7 @@ Class rust_dc
     Static  rgx             := {profile_url         : "<\s*?a\s*?href=""(.*?)"""
                                ,avatar_url          : "img\s+src=""(.*?)""\s+alt="
                                ,username            : "class=""streamer-name"".*?>(.*?)</"
-                               ,status              : "online-status.*?>(.*?)<"
+                               ,online              : "online-status.*?>(.*?)<"
                                ,ext                 : "\.(\w+)\s*?$"
                                ,drop_pic_url        : "img\s*?src=""(.*?)"".*?title="
                                ,drop_hrs            : "<span>\s*?(\d+) hours</span>"
@@ -99,7 +99,7 @@ Class rust_dc
                                ,username            :""
                                ,pid                 :0
                                ,time                :0}
-    Static ghwnd            := {"notify_stream"     : ""            
+    ghwnd                   := {"notify_stream"     : ""            
                                ,"notify_popup"      : ""
                                ,"notify_beep"       : ""
                                ,"notify_url"        : ""
@@ -108,8 +108,8 @@ Class rust_dc
                                ,"notify_file"       : ""
                                ,"gui_main"          : ""
                                ,"error_txt"         : ""
-                               ,"user.status_pic"   : ""
-                               ,"user.status_txt"   : ""
+                               ,"user.online_pic"   : ""
+                               ,"user.online_txt"   : ""
                                ,"user.snooze_btn"   : ""
                                ,"user.dismiss_btn"  : ""
                                ,"user.notify_cb"    : ""
@@ -117,12 +117,163 @@ Class rust_dc
                                ,"updater_btn"       : ""
                                ,"interval_sld"      : ""
                                ,"cps_txt"           : ""
-                               ,"gui_splash"        : ""}
+                               ,"gui_splash"        : ""} 
     
+        ; ####################
+    ; ##  Startup/Exit  ##
+    ; ####################
+    Start()
+    {
+        splash := ObjBindMethod(rust_dc.guis.splash, "update")
+        
+        this.splash.start("Starting up`n" this.title)
+        
+        splash.("Setting`nShutdown`nFunctions")                                                                 ; Set shutdown processes
+        , OnExit(this.use_method(this, "shutdown"))
+        splash.("Creating`nFolders")                                                                            ; Create program folders
+        , this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
+        splash.("Downloading`nStreamer Data")                                                                   ; Get fresh streamer data
+        , this.get_streamer_data()
+        splash.("Creating`nStreamer`nFolders")                                                                  ; Create streamer folders
+        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
+        splash.("Loading`nLog")                                                                                 ; Load error log
+        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
+        splash.("Downloading`nImages")                                                                          ; Download images
+        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
+        splash.("Creating`nFolders")                                                                            ; Generate system tray
+        , this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
+        splash.("Generating`nNotify List")                                                                      ; Create and load notify_list settings
+        , this.generate_notify_list()
+        splash.("Creating`nGUI")                                                                                ; Create GUI
+        , this.main.create()
+        this.main.Show()                                                                                    ; Show GUI
+        splash.("Update`nCheck!")                                                                               ; Check for updates!
+        , this.update_check(1)
+        splash.("Starting`nheartbeat.`n(CLEAR!!!)")                                                             ; Start heartbeat
+        , this.heartbeat()
+        , splash.("It's alive!")
+        , this.splash.finish()
+        Return
+    }
+    
+    load_log()
+    {
+        status := 0
+        If (FileExist(this.path.log) = "")
+        {
+            FileAppend, % "Log file created: " A_Now "`n`n---`n`n", % this.path.log
+            If ErrorLevel
+                this.error(A_ThisFunc, "Could not create a new log file.", 1)
+                , status := 1
+        }
+        FileRead, err_log, % this.path.log
+        this.err_log := err_log
+        Return status
+    }
+
+    download_images()
+    {
+        Status := 0
+        ; Make sure streamer data is there
+        If !IsObject(this.streamer_data)
+            Return -3
+        
+        ; Loop through each streamer, download, and save their avatars and item drops
+        For index, user in this.streamer_data
+            For i, type in ["avatar","drop_pic"]
+                ext         := ""
+                , url       := user[type "_url"]
+                , RegExMatch(url, this.rgx.ext, ext)
+                , path      := this.path.streamers "\" user.username
+                , file      := type "." ext
+                , this.streamer_data[index][type "_loc"] := path "\" file
+                , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
+        
+        ; Get downloadable images
+        For key, value in this.url
+            InStr(value, ".png")
+                ? (this.img_getter(this.url[key], this.path.img, key ".png") = 1 ? status := 1 : "")
+                : ""
+        
+        Return Status
+    }
+    
+    shutdown()
+    {
+        this.save_log()                                                     ; Save error logs
+        this.main.save_last_xy()                                        ; Save last coords
+        this.save_settings("main", "interval", this.main.interval)  ; Save frequency of checking
+        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?   
+        ; IfMsgBox, Yes
+        ;     FileRemoveDir, % this.path.app, 1
+        Return
+    }
+    
+    quit(veryify=1)
+    {
+        If verify
+        {
+            MsgBox, 0x4, Exiting, Close program?
+            IfMsgBox, No
+                Return
+        }
+        ExitApp
+        Return
+    }
+    
+    generate_notify_list()
+    {
+        this.notify_list := {}
+        For index, user in this.streamer_data
+            value := this.load_settings("notify_list", user.username)
+            , this.notify_list[user.username] := (value = "Err" ? 0 : value)
+        
+        Return
+    }
+    
+    folder_check()
+    {
+        Status := 0
+        For key, path in this.path
+            If (path = "")
+                Continue
+            Else If !InStr(path, ".") && (FileExist(path) = "")
+            {
+                FileCreateDir, % path
+                If ErrorLevel
+                    this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
+                    , status := 1
+            }
+        
+        ; Check settings file
+        If !FileExist(this.path.settings)
+            FileAppend, % "[Settings]"
+                . "`nCreated=" A_Now "`n`n"
+                , % this.path.settings
+        
+        Return status
+    }
+    
+    create_streamer_paths()
+    {
+        For index, user in this.streamer_data
+            If !FileExist(this.path.streamers "\" user.username)
+            {
+                FileCreateDir, % this.path.streamers "\" user.username
+                If ErrorLevel
+                    this.error(A_ThisFunc, "Unable to create streamer directory: " this.path.app "\" user.username)
+                    , status := 1
+            }
+        Return
+    }
+    
+    ; ######################
+    ; ## Timing / Updates ##
+    ; ######################
     heartbeat()
     {
         this.get_streamer_data()        ; Get fresh data
-        , this.main.update_gui()    ; Update GUI with new info
+        , this.guis.main.update_gui()   ; Update GUI with new info
         , this.notify_check()           ; See if a notification needs to happen
         , this.next_beat()              ; Set when next update should occur
         Return
@@ -138,37 +289,38 @@ Class rust_dc
         Return
     }
     
+    ;#####################
+    ;##  Notifications  ##
+    ;#####################
     notify_check()
     {
         notify := 0
         For index, user in this.streamer_data                       ; Compare fresh data to old notify list
-            If (user.status) && (this.notify_list[user.username])   ; 
-                If (notify := this.notify_user(user))
-                    Break 
+            If (user.online)                                        ; Is user online?
+            && (this.notify_list[user.username])                    ; Is user on the notify list?
+            && (notify := this.notify_user(user))                   ; Did successful notification happen?
+                Break
         
-        ; If not one was found, the flashing stops.
-        If (notify = 0)
-            this.systray.flash_stop := True
-        
+        (notify = 0) ? this.systray. := True                        ; If no notifications, stop icon flash
         Return
     }
     
     notify_user(user_data)
     {
         ; If stream
-        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_stream
+        ;~ GuiControlGet, state,, % this.guis.gHwnd.notify_stream
         ;~ (state) ? this.streamer_maintenance(user_data) : ""
         ; If popup
-        GuiControlGet, state,, % this.main.gHwnd.notify_popup
+        GuiControlGet, state,, % this.guis.gHwnd.notify_popup
         (state) ? this.notify_popup(user_data) : ""
         ;~ ; If beep
-        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_beep
+        ;~ GuiControlGet, state,, % this.guis.gHwnd.notify_beep
         ;~ (state) ? this.play_beep() : ""
         ;~ ; If icon
-        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_icon
+        ;~ GuiControlGet, state,, % this.guis.gHwnd.notify_icon
         ;~ (state) ? this.systray.icon_flash() : ""
         ;~ ; If file
-        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_file
+        ;~ GuiControlGet, state,, % this.guis.gHwnd.notify_file
         ;~ (state) ? this.write_to_file(user_data) : ""
         Return
     }
@@ -177,13 +329,6 @@ Class rust_dc
     {
         Static active_popup := False
                ,snooze_time := 0
-        
-        str := ""
-        Loop, Parse, % Clipboard, `n, `r
-            InStr(A_LoopField, "gHwnd.")
-                ? str .= A_LoopField "`n" : ""
-        Clipboard := str
-        MsgBox done.
         
         If active_popup
             Return
@@ -199,7 +344,7 @@ Class rust_dc
         IfMsgBox, Yes
             snooze_time := A_TickCount + (15 * 50 * 1000)
         Else
-            GuiControl,, % this.gHwnd.notify_popup, 0
+            GuiControl,, % this.guis.gHwnd.notify_popup, 0
         Return
     }
     
@@ -240,31 +385,6 @@ Class rust_dc
                 , wait_list.InsertAt(1) := user_data
             Else wait_list.Push(user_data)
         }
-        ;Else If (strm.username != the_line.1.username)
-        
-        ; If no one is streaming
-        ;If (strm.active = 1)
-        ;{
-        ;    If ((A_TickCount - strm.time) < (user_data.drop_hours * hr_as_ms))
-        ;        Return
-        ;    GuiControl,, this.gHwnd[user_data.username].notify_cb, 0
-        ;    this.kill_stream(strm.pid)
-        ;}
-        ;Else If 
-        ;{
-        ;    strm.active := True
-        ;    , strm.pid  := this.open_url(user_data.profile_url)
-        ;    , strm.time := A_TickCount
-        ;    , strm.user := user_data.username
-        ;}
-        ;Else If (user_data.username != strm.user)
-        ;{
-        ;    Return
-        ;}
-        ;
-        ;; Set Timer for being done.
-        ;bf := ObjBindMethod(this, "kill_stream", strm.pid)
-        ;SetTimer, % bf, -10000 ; % -1 * hr_as_ms * user_data.drop_hours
         Return
     }
     
@@ -277,13 +397,6 @@ Class rust_dc
         Return
     }
 
-    
-    get_notify_url()
-    {
-        GuiControlGet, url,, % this.gHwnd.notify_url_edit
-        Return url
-    }
-    
     kill_stream(pid)
     {
         WinClose, % "ahk_pid " pid,, 1000
@@ -300,6 +413,9 @@ Class rust_dc
         Return
     }
     
+    ; ###################
+    ; ## Streamer Info ##
+    ; ###################
     ; Scrape HTML from streamer page
     ; Saves html to this.html
     ; Returns 1 = success, 0 = failure
@@ -313,7 +429,9 @@ Class rust_dc
             web.Open("GET", this.url.facepunch), web.Send()
         Catch status
         {
-            this.error(A_ThisFunc, msg:="Error trying to get HTML from:`n" this.url.facepunch, option:=0)
+            this.error(A_ThisFunc, msg:="Error trying to get HTML from:`n" this.url.facepunch
+                . "`nCatch: " status
+                , option:=0)
         }
         
         If (Retry < 1)
@@ -326,9 +444,6 @@ Class rust_dc
         }
         Else
             this.html := web.ResponseText
-        
-        
-        
         Return
     }
     
@@ -337,7 +452,7 @@ Class rust_dc
     ; .avatar_url       URL to user's gaming avatar
     ; .avatar_loc       Location on disk where avatar is saved
     ; .username         User's username (Redudant, right?)
-    ; .status           User's status of online or offline
+    ; .online           User's online status
     ; .drop_pic_url     URL picture of this user's Rust drop
     ; .drop_pic_loc     Location on disk where Rust drop picture is saved
     ; .drop_name        The name of the drop
@@ -370,8 +485,8 @@ Class rust_dc
             Else  RegExMatch(A_LoopField, this.rgx.profile_url  , match) ? info := {profile_url:match1}  ; Start of new user. Get URL.
                 : RegExMatch(A_LoopField, this.rgx.avatar_url   , match) ? info.avatar_url   := match1   ; Get avatar
                 : RegExMatch(A_LoopField, this.rgx.username     , match) ? info.username     := match1   ; Get username
-                : RegExMatch(A_LoopField, this.rgx.status       , match) ? info.status       := (match1
-                                                                                            ="Live"?1:0) ; Get status
+                : RegExMatch(A_LoopField, this.rgx.online       , match) ? info.online       := (match1
+                                                                                            ="Live"?1:0) ; Get online status
                 : RegExMatch(A_LoopField, this.rgx.drop_pic_url , match) ? info.drop_pic_url := match1   ; Get URL for drop pic
                 : RegExMatch(A_LoopField, this.rgx.drop_hrs     , match) ? info.drop_hours   := match1   ; Get pic name
                 : RegExMatch(A_LoopField, this.rgx.drop_name    , match) ? info.drop_name    := match1   ; Get pic name
@@ -385,29 +500,6 @@ Class rust_dc
         this.streamer_data := strm_list
         
         Return (this.streamer_data = "" ? 1 : 0)
-    }
-    
-    img_getter(url, path, file_name, force:=0)
-    {
-        Status := 0
-        If !FileExist(path)
-        {
-            FileCreateDir, % path
-            (status := ErrorLevel)
-                ? this.error(A_ThisFunc, "Save path does not exist and could not be created."
-                    . "`npath: " path)
-                : ""
-        }
-        
-        If !FileExist(path "\" file_name) || (force = 1)
-        {
-            UrlDownloadToFile, % url, % path "\" file_name
-            (status := ErrorLevel)
-                ? this.error(A_ThisFunc, "Could not download file from url and save to location."
-                    . "`nurl: " url "`nlocation: " path "\" file_name) : ""
-        }
-        
-        Return status
     }
     
     use_method(obj, method, param="")
@@ -453,6 +545,12 @@ Class rust_dc
     {
         Static  gHwnd         := {}
         
+        transparent_bg(hwnd)
+        {
+            GuiControl, +BackgroundTrans, % hwnd
+            Return
+        }
+        
         Class main extends guis
         {
             Static  name        := "Main"
@@ -461,6 +559,9 @@ Class rust_dc
             ; Initial generation of main GUI
             create()
             {
+                gHwnd           := (this.guis.gHwnd.main := {})
+                add_method      := ObjBindMethod(rust_dc, "add_control_method", params:="")
+                
                 pad             := 10
                 , padh          := Round(pad/2)
                 , padq          := Round(pad/4)
@@ -484,7 +585,7 @@ Class rust_dc
                 
                 ; Creates the base GUI
                 Gui, Main:New, +Caption -ToolWindow +HWNDhwnd, % rust_dc.title
-                    this.gHwnd.main := {gui:hwnd}
+                    ghwnd.gui := hwnd
                 Gui, Main:Default
                 Gui, Margin, % pad, % pad
                 Gui, Color, 0x000000, 0x606060
@@ -504,10 +605,10 @@ Class rust_dc
                 
                 ; Add error area to display errors as they come
                 Gui, Add, GroupBox, w%err_gb_w% h%err_gb_h% xm y+%pad% +HWNDhwnd Section, Error Messages:
-                    this.gHwnd.main.error_gb := hwnd
+                    this.guis.gHwnd.main.error_gb := hwnd
                 Gui, Font, s8 cWhite
                 Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1 +HWNDhwnd, FAKE ERROR MESSAGE FOR TESTING!
-                    this.gHwnd.main.error_txt := hwnd
+                    this.guis.gHwnd.main.error_txt := hwnd
                 
                 ; Add all the buttons to the bottom area
                 ; Exit button
@@ -522,11 +623,11 @@ Class rust_dc
                 ; Uncheck all button
                 x := pad + btn_w
                 Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Uncheck All
-                    rust_dc.add_control_method(hwnd, this, "check_all_streamers", 0)
+                    rust_dc.add_control_method(hwnd, this, "checkbox_all_streamers", 0)
                 ; Check all button
                 x := pad + btn_w
                 Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Check All
-                    rust_dc.add_control_method(hwnd, this, "check_all_streamers", 1)
+                    rust_dc.add_control_method(hwnd, this, "checkbox_all_streamers", 1)
                 
                 ; Add overlay button
                 x := (pad2 + btn_w)
@@ -547,8 +648,8 @@ Class rust_dc
                 , pad2          := pad*2
                 , padh          := pad/2
                 , padq          := pad/4
-                , status_w      := 70
-                , status_h      := 20
+                , online_w      := 70
+                , online_h      := 20
                 , avatar_w      := 50
                 , avatar_h      := 50
                 , drop_pic_w    := sw - pad
@@ -558,23 +659,23 @@ Class rust_dc
                 , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
                 , action_btn_h  := avatar_h - notify_cb_h - pad
                 , name          := user.username
-                , this.gHwnd.main[name] := {}
+                , this.guis.gHwnd.main[name] := {}
                 
                 Gui, Main:Default
                 Gui, Font, S12 Bold q5 cWhite
                 ; Create groupbox border and add username to groupbox
                 Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % name
                 
-                ; Add status background to groupbox border
-                x := sw - status_w - padh
-                Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd, % this.path["img_" (user.status ? "online" : "offline")]
-                    this.gHwnd.main[name].status_pic := hwnd
-                ; Add status text
+                ; Add online background to groupbox border
+                x := sw - online_w - padh
+                Gui, Add, Picture, w%online_w% h%online_h% xp+%x% yp HWNDhwnd, % this.path["img_" (user.online ? "online" : "offline")]
+                    this.guis.gHwnd.main[name].online_pic := hwnd
+                ; Add online text 
                 Gui, Font, S10 Bold q5 cBlack
-                Gui, Add, Text, w%status_w% h%status_h% xp yp+2 +Center HWNDhwnd
-                    , % user.status ? "LIVE" : "OFFLINE"
+                Gui, Add, Text, w%online_w% h%online_h% xp yp+2 +Center HWNDhwnd
+                    , % user.online ? "LIVE" : "OFFLINE"
                     this.transparent_bg(hwnd)
-                    this.gHwnd.main[name].status_txt := hwnd
+                    this.guis.gHwnd.main[name].online_txt := hwnd
                 
                 ; Drop_pic image
                 x := sx + padh
@@ -588,9 +689,9 @@ Class rust_dc
                 Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border +Section, % user.avatar_loc
                 ; Add snooze/dismiss buttons
                 Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%padh% yp+%padh% +HWNDhwnd, Snooze
-                    this.gHwnd.main[name].snooze_btn := hwnd
+                    this.guis.gHwnd.main[name].snooze_btn := hwnd
                 Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%pad% yp +HWNDhwnd, Dismiss
-                    this.gHwnd.main[name].dismiss_btn := hwnd
+                    this.guis.gHwnd.main[name].dismiss_btn := hwnd
                 
                 ; Add notify checkbox
                 Gui, Font, S10 Bold q5
@@ -598,16 +699,13 @@ Class rust_dc
                 y := notify_cb_h
                 x := avatar_w + pad
                 Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% +HWNDhwnd, Notify Me!
-                    this.gHwnd.main[name].notify_cb := hwnd
+                    this.guis.gHwnd.main[name].notify_cb := hwnd
                     rust_dc.add_control_method(hwnd, this, "notify_action", name)
                     GuiControl,, % hwnd, % this.notify_list[name]
                 ; Hide the buttons until they're needed
-                GuiControl, Hide, % this.gHwnd.main[name].snooze_btn
-                GuiControl, Hide, % this.gHwnd.main[name].dismiss_btn
+                GuiControl, Hide, % this.guis.gHwnd.main[name].snooze_btn
+                GuiControl, Hide, % this.guis.gHwnd.main[name].dismiss_btn
                 
-                ; Add "notify me" checkbox below group box
-                ;Gui, Add, Checkbox, 
-                ;MsgBox, % "Gui card check!`n" "status_w: " status_w "`nstatus_h: " status_h "`navatar_w: " avatar_w "`navatar_h: " avatar_h "`ndrop_pic_w: " drop_pic_w "`ndrop_pic_h: " drop_pic_h "`nsw: " sw "`nsh: " sh "`nsx: " sx "`nsy: " sy 
                 Return
             }
             
@@ -627,16 +725,16 @@ Class rust_dc
                 , font_def  := "s10 Norm cWhite"
                 
                 ; Updater section
-                  upd_btn_w := gb_w - pad2
+                upd_btn_w   := gb_w - pad2
                 , upd_btn_h := 30
                 , upd_gb_h  := upd_btn_h + pad_ul
                 Gui, Font, % font_gb
                 Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker:
-                    this.gHwnd.main.updater_gb := hwnd
+                    this.guis.gHwnd.main.updater_gb := hwnd
                     last_gb := upd_gb_h
                 Gui, Font, Norm cBlack
                 Gui, Add, Button, w%upd_btn_w% h%upd_btn_h% xp+%pad% yp+%pad_gb% +HWNDhwnd +Disabled, Initializing...
-                    this.gHwnd.main.updater_btn := hwnd
+                    this.guis.gHwnd.main.updater_btn := hwnd
                     this.start_update_check_timer()
                     rust_dc.add_control_method(hwnd, this, "run_update")
                 
@@ -656,13 +754,13 @@ Class rust_dc
                 Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad_gb% +Center, 1
                 Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
                     , % this.interval_load()
-                    this.gHwnd.main.interval_sld := hwnd
+                    this.guis.gHwnd.main.interval_sld := hwnd
                     rust_dc.add_control_method(hwnd, this, "interval_slider_moved")
                     this.interval_slider_moved(hwnd,"","")
                 Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp +Center, 10
                 Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%padh% +Center +HWNDhwnd, Initializing...
-                    this.gHwnd.main.cps_txt := hwnd
-                    this.interval_per_second_update()
+                    this.guis.gHwnd.main.cps_txt := hwnd
+                    this.update_interval_per_second()
                 
                 ; Quick link to twitch rewards claim page
                 link_list   := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
@@ -697,7 +795,7 @@ Class rust_dc
                 For index, data in this.notify_opt
                 {
                     Gui, Add, Checkbox, % "w" noti_cb_w " h" noti_cb_h " xs+" pad " " (index = 1 ? " ys+" pad_gb : " y+" padh) " +HWNDhwnd", % data.txt
-                        this.gHwnd.main["notify_" data.type] := hwnd
+                        this.guis.gHwnd.main["notify_" data.type] := hwnd
                         value := this.load_settings("notify_pref", data.type)
                         GuiControl,, % hwnd, % (value = "err" ? data.def : value)
                         rust_dc.add_control_method(hwnd, this, "notify_checkbox_checked", data.type, hwnd)
@@ -775,10 +873,10 @@ Class rust_dc
                 Return
             }
             
-            check_all_streamers(state)
+            checkbox_all_streamers(state)
             {
                 For index, user in this.streamer_data
-                    GuiControl,, % this.gHwnd.main[user.username].notify_cb, % state
+                    GuiControl,, % this.guis.gHwnd.main[user.username].notify_cb, % state
                 Return
             }
             
@@ -800,14 +898,14 @@ Class rust_dc
             
             get_interval()
             {
-                GuiControlGet, interval, , % this.gHwnd.main.interval_sld
+                GuiControlGet, interval, , % this.guis.gHwnd.main.interval_sld
                 Return interval
             }
             
-            interval_per_second_update()
+            update_interval_per_second()
             {
                 GuiControl, 
-                    , % this.gHwnd.cps_txt
+                    , % this.guis.gHwnd.cps_txt
                     , % "Checking every " Round(60 / this.get_interval()) " seconds" 
                 Return 
             }
@@ -821,7 +919,7 @@ Class rust_dc
             
             interval_slider_moved(hwnd)
             {
-                this.interval_per_second_update()
+                this.update_interval_per_second()
                 this.next_beat(1)
                 Return
             }
@@ -831,7 +929,7 @@ Class rust_dc
                 GuiControlGet, state, , % hwnd                  ; Get check state
                 this.notify_list[name] := state                 ; Update state into notify list
                 this.save_settings("notify_list", name, state)  ; Save to settins file
-                this.heartbeat()                                ; Do a check
+                ; This should be changed to "update_timer" or something else. this.heartbeat()                                ; Do a check
                 Return
             }
             
@@ -841,29 +939,23 @@ Class rust_dc
                 For index, user in this.streamer_data
                 {
                     ; Get current text
-                    GuiControlGet, txt,, % this.gHwnd[user.username].status_txt
+                    GuiControlGet, txt,, % this.guis.gHwnd[user.username].online_txt
                     
-                    ; Don't update if status hasn't changed
-                    If ((txt = "live") && (user.status))
+                    ; Don't update if online status hasn't changed
+                    If ((txt = "live") && (user.online))
                         Continue
-                    Else If ((txt = "offline") && !user.status)
+                    Else If ((txt = "offline") && !user.online)
                         Continue
                     Else
                     {
-                        id      := this.gHwnd[user.username].status_pic
-                        path    := (user.status ? "img_online" : "img_offline")
+                        id      := this.guis.gHwnd[user.username].online_pic
+                        path    := (user.online ? "img_online" : "img_offline")
                         
                         GuiControl,, % id, % this.path[path]
-                        GuiControl,, % this.gHwnd[user.username].status_txt
-                            , % (user.status ? "LIVE" : "OFFLINE")
+                        GuiControl,, % this.guis.gHwnd[user.username].online_txt
+                            , % (user.online ? "LIVE" : "OFFLINE")
                     }
                 }
-                Return
-            }
-            
-            transparent_bg(hwnd)
-            {
-                GuiControl, +BackgroundTrans, % hwnd
                 Return
             }
             
@@ -893,7 +985,7 @@ Class rust_dc
             
             update_last_xy()
             {
-                WinGetPos, x, y,,, % "ahk_id " this.gHwnd.gui_main
+                WinGetPos, x, y,,, % "ahk_id " this.guis.gHwnd.gui_main
                 this.last_x := x
                 , this.last_y := y
                 Return
@@ -951,7 +1043,7 @@ Class rust_dc
                 , this.img_getter(this.url.img_rust_symbol, this.path.img, "img_rust_symbol.png")
                 
                 Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
-                    this.gHwnd.gui_splash := hwnd
+                    this.guis.gHwnd.gui_splash := hwnd
                 Gui, splash:Default
                 Gui, Margin, 0, 0
                 Gui, Color, 0x000001
@@ -959,10 +1051,10 @@ Class rust_dc
                 Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % this.path.img_rust_symbol
                 Gui, Font, % "s20 cBlack Bold", Consolas
                 Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                    this.gHwnd.spalsh_txt_shadow := hwnd
+                    this.guis.gHwnd.spalsh_txt_shadow := hwnd
                 Gui, Font, % "s20 cWhite Norm", Consolas
                 Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                    this.gHwnd.splash_txt := hwnd
+                    this.guis.gHwnd.splash_txt := hwnd
                 x := scrn_r - scrn_l - gui_w
                 y := scrn_b - scrn_t - gui_h
                 Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
@@ -974,9 +1066,9 @@ Class rust_dc
             {
                 Gui, Splash:Default
                 Gui, Font, % "s20 cBlack Bold", Consolas
-                GuiControl,, % this.gHwnd.spalsh_txt_shadow, % "`n" txt
+                GuiControl,, % this.guis.gHwnd.spalsh_txt_shadow, % "`n" txt
                 Gui, Font, % "s20 cWhite Norm", Consolas
-                GuiControl,, % this.gHwnd.splash_txt, % "`n" txt
+                GuiControl,, % this.guis.gHwnd.splash_txt, % "`n" txt
                 Gui, Splash:Show, AutoSize
             }
             
@@ -1088,7 +1180,7 @@ Class rust_dc
         Static  visible := False
         create()
         {
-            this.ghwnd.overlay := {}
+            this.guis.gHwnd.overlay := {}
             
             Gui, overlay:New, -Caption -ToolWindow +HWNDhwnd
             
@@ -1145,167 +1237,19 @@ Class rust_dc
         
         Gui, Main:Default
         ; Set the Updater Groupbox text and color
-        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.main.gHwnd.updater_gb
+        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.guis.gHwnd.updater_gb
         ; Set the button text
         Gui, Font, Norm cBlack
-        GuiControl, Text, % this.main.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
+        GuiControl, Text, % this.guis.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
         ; Enable/disable
-        GuiControl, % (update_found ? "Enable" : "Disable"), % this.main.gHwnd.updater_btn
+        GuiControl, % (update_found ? "Enable" : "Disable"), % this.guis.gHwnd.updater_btn
         Return
     }
     
-    ; ####################
-    ; ##  Startup/Exit  ##
-    ; ####################
-    Start()
-    {
-        splash := ObjBindMethod(rust_dc.splash, "update")
-        
-        this.splash.start("Starting up`n" this.title)
-        
-        splash.("Setting`nShutdown`nFunctions")                                                                 ; Set shutdown processes
-        , OnExit(this.use_method(this, "shutdown"))
-        splash.("Creating`nFolders")                                                                            ; Create program folders
-        , this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
-        splash.("Downloading`nStreamer Data")                                                                   ; Get fresh streamer data
-        , this.get_streamer_data()
-        splash.("Creating`nStreamer`nFolders")                                                                  ; Create streamer folders
-        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
-        splash.("Loading`nLog")                                                                                 ; Load error log
-        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
-        splash.("Downloading`nImages")                                                                          ; Download images
-        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
-        splash.("Creating`nFolders")                                                                            ; Generate system tray
-        , this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
-        splash.("Generating`nNotify List")                                                                      ; Create and load notify_list settings
-        , this.generate_notify_list()
-        splash.("Creating`nGUI")                                                                                ; Create GUI
-        , this.main.create()
-        this.main.Show()                                                                                    ; Show GUI
-        splash.("Update`nCheck!")                                                                               ; Check for updates!
-        , this.update_check(1)
-        splash.("Starting`nheartbeat.`n(CLEAR!!!)")                                                             ; Start heartbeat
-        , this.heartbeat()
-        , splash.("It's alive!")
-        , this.splash.finish()
-        Return
-    }
     
-    load_log()
-    {
-        status := 0
-        If (FileExist(this.path.log) = "")
-        {
-            FileAppend, % "Log file created: " A_Now "`n`n", % this.path.log
-            If ErrorLevel
-                this.error(A_ThisFunc, "Could not create a new log file.", 1)
-                , status := 1
-        }
-        FileRead, err_log, % this.path.log
-        this.err_log := err_log
-        Return status
-    }
-
-    download_images()
-    {
-        Status := 0
-        ; Make sure streamer data is there
-        If !IsObject(this.streamer_data)
-            Return -3
-        
-        ; Loop through each streamer, download, and save their avatars and item drops
-        For index, user in this.streamer_data
-            For i, type in ["avatar","drop_pic"]
-                ext         := ""
-                , url       := user[type "_url"]
-                , RegExMatch(url, this.rgx.ext, ext)
-                , path      := this.path.streamers "\" user.username
-                , file      := type "." ext
-                , this.streamer_data[index][type "_loc"] := path "\" file
-                , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
-        
-        ; Get downloadable images
-        For key, value in this.url
-            InStr(value, ".png")
-                ? (this.img_getter(this.url[key], this.path.img, key ".png") = 1 ? status := 1 : "")
-                : ""
-        
-        Return Status
-    }
-    
-    shutdown()
-    {
-        this.save_log()                                                     ; Save error logs
-        this.main.save_last_xy()                                        ; Save last coords
-        this.save_settings("main", "interval", this.main.interval)  ; Save frequency of checking
-        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?   
-        ; IfMsgBox, Yes
-        ;     FileRemoveDir, % this.path.app, 1
-        Return
-    }
-    
-    quit(veryify=1)
-    {
-        If verify
-        {
-            MsgBox, 0x4, Exiting, Close program?
-            IfMsgBox, No
-                Return
-        }
-        ExitApp
-        Return
-    }
-    
-    generate_notify_list()
-    {
-        this.notify_list := {}
-        For index, user in this.streamer_data
-            value := this.load_settings("notify_list", user.username)
-            , this.notify_list[user.username] := (value = "Err" ? 0 : value)
-        
-        Return
-    }
-    
-    folder_check()
-    {
-        Status := 0
-        For key, path in this.path
-            If (path = "")
-                Continue
-            Else If !InStr(path, ".") && (FileExist(path) = "")
-            {
-                FileCreateDir, % path
-                If ErrorLevel
-                    this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
-                    , status := 1
-            }
-        
-        ; Check settings file
-        If !FileExist(this.path.settings)
-            FileAppend, % "[Settings]"
-                . "`nCreated=" A_Now "`n`n"
-                , % this.path.settings
-        
-        Return status
-    }
-    
-    create_streamer_paths()
-    {
-        For index, user in this.streamer_data
-            If !FileExist(this.path.streamers "\" user.username)
-            {
-                FileCreateDir, % this.path.streamers "\" user.username
-                If ErrorLevel
-                    this.error(A_ThisFunc, "Unable to create streamer directory: " this.path.app "\" user.username)
-                    , status := 1
-            }
-        Return
-    }
-    
-
-    ; ##########################
-    ; ##  General Functionss  ##
-    ; ##########################
+    ; #############
+    ; ## Updater ##
+    ; #############
     run_update()
     {
         status      := 0
@@ -1326,27 +1270,66 @@ Class rust_dc
             ? this.error(A_ThisFunc, "Could not download file from url and save to location."
                 . "`nurl: " url "`nlocation: " temp_path "\" file_name) : ""
         
-        ;code := "#SingleInstance Force`nMsgBox, % ""Destination: "" A_Args.1 ""``nSource: "" A_Args.2`nSleep, 3000`nExitApp"
+        ; Code to build an updater script
         code := "#SingleInstance Force"
+            . "`nSleep, 1000"
             . "`nFileMove, % A_Args.1, % A_Args.2, 1"
             . "`nRun, % A_AhkPath A_Space A_Args.2"
             . "`nExitApp"
         source      := dq temp_path "\" file_name dq
         destination := dq A_ScriptFullPath dq
-        ; Delete any previous updater
-        If FileExist(temp_path "\" upd_name)
-            FileDelete, % temp_path "\" upd_name
+        
+        ; Ensure temp folder is empty
+        this.temp_cleanup()
+        
+        ; Create updater script
         FileAppend, % code, % temp_path "\" upd_name
         (status := ErrorLevel)
             ? this.error(A_ThisFunc, "Could not write updater file."
                 . "`nlocation: " temp_path "\" upd_name) : ""
-        ; Run updater and exit here
+        ; Run updater and exit this script
         Run, % A_AhkPath " " temp_path "\" upd_name
             . " " source
             . " " destination
+        
         ExitApp
     }
     
+    ; Empty the temp folder
+    this.temp_cleanup()
+    {
+        FileDelete, % this.path.temp "\*.*"
+    }
+    
+    ; ##########################
+    ; ##  General Functionss  ##
+    ; ##########################
+    ; Get image from url
+    ; 
+    img_getter(url, path, file_name, overwrite:=0)
+    {
+        Status := 0
+        If (FileExist(path) = "")
+        {
+            FileCreateDir, % path
+            (status := ErrorLevel)
+                ? this.error(A_ThisFunc, "Save path does not exist and could not be created."
+                    . "`npath: " path)
+                : ""
+        }
+        
+        If (FileExist(path "\" file_name) = "") || (overwrite = 1)
+        {
+            UrlDownloadToFile, % url, % path "\" file_name
+            (status := ErrorLevel)
+                ? this.error(A_ThisFunc, "Could not download file from url and save to location."
+                    . "`nurl: " url "`nlocation: " path "\" file_name) : ""
+        }
+        
+        Return status
+    }
+    
+
     web_get(url)
     {
         web := ComObjCreate("WinHttp.WinHttpRequest.5.1")
@@ -1417,7 +1400,7 @@ Class rust_dc
     {
         If (rgb >= 0xFFFFFF)
             Return
-        GuiControl, c%rgb%, % this.gHwnd.error_txt 
+        GuiControl, c%rgb%, % this.guis.gHwnd.error_txt 
         rgb += 0x000101
         bf := ObjBindMethod(this, "err_notify_color_changer", rgb)
         Sleep, 1
@@ -1433,9 +1416,9 @@ Class rust_dc
     {
         ; Log error
         this.err_last   := A_Now "`nCall: " call "`nMessage: " msg
-        this.err_log    .= this.err_last "`n`n"
+        this.err_log    .= this.err_last "`n`n---`n`n"
         ; Update gui
-        GuiControl,, % this.gHwnd.error_txt, % this.err_last
+        GuiControl,, % this.guis.gHwnd.error_txt, % this.err_last
         this.err_notify_color_changer()
         ; Handle options
         If (option = -1)
@@ -1469,12 +1452,12 @@ Plus, this protects me because no one can be like "Your program let me info out!
 
 Is this going to log my password/keystrokes?  
 No... It's an open source program. You can look at the code. The only data transmission going on is to the facepunch servers to get up-to-date HTML and to GitHub to get files like images. No other send/get requests are sent.  
-If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo Â¯\_(-_-)_/Â¯  
+If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo ¯\_(-_-)_/¯  
 The purpose of this is to help the community get skins.  
 
 Can I set it to automatically open up the streamer when they come on?  
 Yes. It's one of the "notification" options. But it's the user's responsibility to be logged into twitch and to have their accounts linked. There are instructions about this at script launch.  
-You can watch other twitch streams, but do not be logged into your account while doing so or it could affect you getting drops.
+You can watch other twitch streams, but do it in an incognito/private window and don't be logged into your account. If you're logged in, it can affect you getting credit for the current drop.
 
 What kind of alerts does it give?  
 I haven't designed all the options, but as of now, here's what I have:  
