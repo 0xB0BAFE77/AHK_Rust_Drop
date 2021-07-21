@@ -4,7 +4,7 @@
 rust_dc.Start()
 Return
 
-*F1::rust_dc.main_gui.Toggle()
+*F1::rust_dc.main.Toggle()
 *Escape::ExitApp
 
 ~^s::
@@ -99,7 +99,7 @@ Class rust_dc
                                ,username            :""
                                ,pid                 :0
                                ,time                :0}
-    Static ghwnd            := {"notify_stream"     : ""
+    Static ghwnd            := {"notify_stream"     : ""            
                                ,"notify_popup"      : ""
                                ,"notify_beep"       : ""
                                ,"notify_url"        : ""
@@ -119,68 +119,10 @@ Class rust_dc
                                ,"cps_txt"           : ""
                                ,"gui_splash"        : ""}
     
-    Start()
-    {
-        this.splash.start("Starting up`n" this.title)
-        
-        this.error("test")
-        
-        ; Set shutdown processes
-        this.splash.start("Setting`nShutdown`nFunctions")
-        , OnExit(this.use_method(this, "shutdown"))
-        
-        ; Create program folders
-        this.splash.update("Creating`nFolders")
-        , this.folder_check() ? this.error(A_ThisFunc, "Folder's cannot be created.", 1) : ""
-        
-        ; Get fresh streamer data
-        this.splash.update("Downloading`nStreamer Data")
-        , this.get_streamer_data()
-        
-        ; Create streamer folders
-        this.splash.update("Creating`nStreamer`nFolders")
-        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Streamer folders could not be created.", 1) : ""
-        
-        ; Load error log
-        this.splash.update("Loading`nLog")
-        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
-        
-        ; Download images
-        this.splash.update("Downloading`nImages")
-        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
-        
-        ; Generate system tray
-        this.splash.update("Creating`nFolders")
-        , this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
-        
-        ; Create and load notify_list settings
-        this.splash.update("Generating`nNotify List")
-        , this.generate_notify_list()
-        
-        ; Create gui
-        this.splash.update("Creating`nGUI")
-        , this.main_gui.create()
-        
-        ; Check for updates!
-        this.splash.update("Update`nCheck!")
-        , this.update_check(1)
-        
-        ; Show it
-        this.main_gui.Show()
-        
-        ; Start heartbeat
-        this.splash.update("Starting`nheartbeat.`n(CLEAR!!!)")
-        , this.heartbeat()
-        , this.splash.update("It's alive!")
-        
-        this.splash.finish()
-        Return
-    }
-    
     heartbeat()
     {
         this.get_streamer_data()        ; Get fresh data
-        , this.main_gui.update_gui()    ; Update GUI with new info
+        , this.main.update_gui()    ; Update GUI with new info
         , this.notify_check()           ; See if a notification needs to happen
         , this.next_beat()              ; Set when next update should occur
         Return
@@ -214,19 +156,19 @@ Class rust_dc
     notify_user(user_data)
     {
         ; If stream
-        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_stream
+        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_stream
         ;~ (state) ? this.streamer_maintenance(user_data) : ""
         ; If popup
-        GuiControlGet, state,, % this.main_gui.gHwnd.notify_popup
+        GuiControlGet, state,, % this.main.gHwnd.notify_popup
         (state) ? this.notify_popup(user_data) : ""
         ;~ ; If beep
-        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_beep
+        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_beep
         ;~ (state) ? this.play_beep() : ""
         ;~ ; If icon
-        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_icon
+        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_icon
         ;~ (state) ? this.systray.icon_flash() : ""
         ;~ ; If file
-        ;~ GuiControlGet, state,, % this.main_gui.gHwnd.notify_file
+        ;~ GuiControlGet, state,, % this.main.gHwnd.notify_file
         ;~ (state) ? this.write_to_file(user_data) : ""
         Return
     }
@@ -234,7 +176,14 @@ Class rust_dc
     notify_popup(user)
     {
         Static active_popup := False
-               ,snooze      := 0
+               ,snooze_time := 0
+        
+        str := ""
+        Loop, Parse, % Clipboard, `n, `r
+            InStr(A_LoopField, "gHwnd.")
+                ? str .= A_LoopField "`n" : ""
+        Clipboard := str
+        MsgBox done.
         
         If active_popup
             Return
@@ -243,14 +192,14 @@ Class rust_dc
             Return
         
         active_popup := True
-        MsgBox, % opt, Online!
+        MsgBox, 0x4, Online!
             , % user.username " is now online!"
             . "`n`nHit yes to snooze popups for 15 minutes."
             . "`nHit no to disable popups."
         IfMsgBox, Yes
             snooze_time := A_TickCount + (15 * 50 * 1000)
         Else
-        active_popup := False
+            GuiControl,, % this.gHwnd.notify_popup, 0
         Return
     }
     
@@ -344,103 +293,11 @@ Class rust_dc
         Return
     }
     
-    generate_notify_list()
-    {
-        this.notify_list := {}
-        For index, user in this.streamer_data
-            value := this.load_settings("notify_list", user.username)
-            , this.notify_list[user.username] := (value = "Err" ? 0 : value)
-        
-        Return
-    }
-    
     get_streamer_data()
     {
         this.update_streamer_html()
-        MsgBox, % this.html
         this.parse_streamer_html()
-        MsgBox, done parsing
-        
         Return
-    }
-    
-    folder_check()
-    {
-        Status := 0
-        For key, path in this.path
-            If (path = "")
-                Continue
-            Else If !InStr(path, ".") && (FileExist(path) = "")
-            {
-                FileCreateDir, % path
-                If ErrorLevel
-                    this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
-                    , status := 1
-            }
-        
-        ; Check settings file
-        If !FileExist(this.path.settings)
-            FileAppend, % "[Settings]"
-                . "`nCreated=" A_Now "`n`n"
-                , % this.path.settings
-        
-        Return status
-    }
-    
-    create_streamer_paths()
-    {
-        For index, user in this.streamer_data
-            If !FileExist(this.path.streamers "\" user.username)
-            {
-                FileCreateDir, % this.path.streamers "\" user.username
-                If ErrorLevel
-                    this.error(A_ThisFunc, "Unable to create streamer directory: " this.path.app "\" user.username)
-                    , status := 1
-            }
-        Return
-    }
-    
-    load_log()
-    {
-        status := 0
-        If (FileExist(this.path.log) = "")
-        {
-            FileAppend, % "Log file created: " A_Now "`n`n", % this.path.log
-            If ErrorLevel
-                this.error(A_ThisFunc, "No error log exists and could not create a new one.", 1)
-                , status := 1
-        }
-        FileRead, err_log, % this.path.log
-        this.err_log := err_log
-        Return status
-    }
-
-    download_images()
-    {
-        Status := 0
-        ; Make sure streamer data is there
-        If !IsObject(this.streamer_data)
-            Return -3
-        MsgBox 2
-        
-        ; Loop through each streamer, download, and save their avatars and item drops
-        For index, user in this.streamer_data
-            For i, type in ["avatar","drop_pic"]
-                ext         := ""
-                , url       := user[type "_url"]
-                , RegExMatch(url, this.rgx.ext, ext)
-                , path      := this.path.streamers "\" user.username
-                , file      := type "." ext
-                , this.streamer_data[index][type "_loc"] := path "\" file
-                , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
-        MsgBox 3
-        ; Get downloadable images
-        For key, value in this.url
-            InStr(value, ".png")
-                ? (this.img_getter(this.url[key], this.path.img, key ".png") = 1 ? status := 1 : "")
-                : ""
-        
-        Return Status
     }
     
     ; Scrape HTML from streamer page
@@ -553,7 +410,7 @@ Class rust_dc
         Return status
     }
     
-    use_method(obj, method, param:="")
+    use_method(obj, method, param="")
     {
         bf := ObjBindMethod(obj, method, param*)
         Return bf
@@ -592,544 +449,558 @@ Class rust_dc
         Return
     }
     
-    Class main_gui extends rust_dc
+    Class guis
     {
-        Static  gui_name        := "Main"
-                , visible       := True
+        Static  gHwnd         := {}
         
-        create()
+        Class main extends guis
         {
-            pad             := 10
-            , padh          := pad/2
-            , padq          := pad/4
-            , pad2          := pad*2
-            , gui_h         := 800
-            , card_w        := 200
-            , card_h        := 270
-            , btn_w         := 90
-            , btn_h         := 30
-            , strm_total    := this.streamer_data.MaxIndex()
-            , cards_per_col := (strm_total < 10) ? 3
-                            : Ceil(strm_total/3)
-            , opt_w         := 200
-            , row_total     := Ceil(this.streamer_data.MaxIndex() / cards_per_col)
-            , opt_h         := (row_total * card_h) + ((row_total-1) * pad)
-            , gui_w         := opt_w + (cards_per_col * card_w) + (cards_per_col * pad)
-            , err_gb_w      := gui_w/2 - pad*2
-            , err_gb_h      := 40
-            , err_txt_w     := err_gb_w - 2
+            Static  name        := "Main"
+                    ,visible    := True
             
-            Gui, Main:New, +Caption -ToolWindow +HWNDhwnd, % this.title
-                this.gHwnd.gui_main := hwnd
-            Gui, Main:Default
-            Gui, Margin, % pad, % pad
-            Gui, Color, 0x000000, 0x222222
-            Gui, Font, s12 cWhite
-            
-            ; Build options area first
-            this.add_gui_options(pad, pad, opt_w, opt_h)
-            
-            ; Build streamer area next to it
-            mx := 0
-            For index, user in this.streamer_data
-                (++mx > cards_per_col ? mx := 1 : "")
-                , my := Ceil(A_Index/cards_per_col) 
-                , x  := (card_w * (mx-1)) + (pad*mx) + opt_w
-                , y  := (card_h * (my-1)) + (pad*my)
-                , this.add_card(index, user, card_w, card_h, x, y)
-            
-            ; Add error area to display errors as they come
-            Gui, Add, GroupBox, w%err_gb_w% h%err_gb_h% xm y+%pad% Section, Error Messages:
-            Gui, Font, s8 cWhite
-            Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1, FAKE ERROR MESSAGE FOR TESTING!
-                this.gHwnd.error_txt
-            
-            ; Button Bank
-            ; Add exit button
-            x := cards_per_col * (card_w + pad) + opt_w - btn_w
-            Gui, Font, s10
-            Gui, Add, Button, w%btn_w% h%btn_h% x%x% y+-%btn_h% HWNDhwnd, Exit
-                this.add_control_method(hwnd, this, "quit")
-            ; Add hide button
-            x := pad + btn_w
-            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Hide
-                this.add_control_method(hwnd, this, "hide")
-            ; Add Uncheck all button
-            x := pad + btn_w
-            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Uncheck All
-                this.add_control_method(hwnd, this, "check_all", 0)
-            ; Add check all button
-            x := pad + btn_w
-            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Check All
-                this.add_control_method(hwnd, this, "check_all", 1)
-            
-            ; Add overlay button
-            x := (pad2 + btn_w)
-            Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Overlay
-                this.add_control_method(hwnd, this.overlay, "show")
-            
-            ; Allows the gui to be clicked and dragged
-            bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
-            OnMessage(0x201, bf)
-            bf := ObjBindMethod(this, "WM_EXITSIZEMOVE", A_Gui)
-            OnMessage(0x232, bf)
-            Return
-        }
-        
-        add_card(index, user, sw, sh, sx, sy)
-        {
-            pad             := 10
-            , pad2          := pad*2
-            , padh          := pad/2
-            , padq          := pad/4
-            , status_w      := 70
-            , status_h      := 20
-            , avatar_w      := 50
-            , avatar_h      := 50
-            , drop_pic_w    := sw - pad
-            , drop_pic_h    := drop_pic_w
-            , notify_cb_w   := sw/2
-            , notify_cb_h   := 20
-            , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
-            , action_btn_h  := avatar_h - notify_cb_h - pad
-            , name          := user.username
-            , this.gHwnd[name] := {}
-            
-            Gui, Main:Default
-            Gui, Font, S12 Bold q5 cWhite
-            ; Create groupbox border and add username to groupbox
-            Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % name
-            
-            ; Add status background to groupbox border
-            x := sw - status_w - padh
-            Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd, % this.path["img_" (user.status ? "online" : "offline")]
-                this.gHwnd[name].status_pic := hwnd
-            ; Add status text
-            Gui, Font, S10 Bold q5 cBlack
-            Gui, Add, Text, w%status_w% h%status_h% xp yp+2 +Center HWNDhwnd
-                , % user.status ? "LIVE" : "OFFLINE"
-                this.transparent_bg(hwnd)
-                this.gHwnd[name].status_txt := hwnd
-            
-            ; Drop_pic image
-            x := sx + padh
-            Gui, Add, Picture, w%drop_pic_w% h%drop_pic_h% x%x% yp+20 +Border, % user.drop_pic_loc
-            ; Drop_name description
-            h := 30
-            Gui, Font, S10 Norm q5 cWhite
-            Gui, Add, Text, wp h%h% xp y+-%h% HWNDhwnd +Center +Border +0x200, % user.drop_name
-            
-            ; User's icon
-            Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border +Section, % user.avatar_loc
-            ; Add snooze/dismiss buttons
-            Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%padh% yp+%padh% +HWNDhwnd, Snooze
-                this.gHwnd[name].snooze_btn := hwnd
-            Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%pad% yp +HWNDhwnd, Dismiss
-                this.gHwnd[name].dismiss_btn := hwnd
-            
-            ; Add notify checkbox
-            Gui, Font, S10 Bold q5
-            w := sw - avatar_w - pad2
-            y := notify_cb_h
-            x := avatar_w + pad
-            Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% +HWNDhwnd, Notify Me!
-                this.gHwnd[name].notify_cb := hwnd
-                this.add_control_method(hwnd, this, "notify_action", name)
-                GuiControl,, % hwnd, % this.notify_list[name]
-            ; Hide the buttons until they're needed
-            GuiControl, Hide, % this.gHwnd[name].snooze_btn
-            GuiControl, Hide, % this.gHwnd[name].dismiss_btn
-            
-            ; Add "notify me" checkbox below group box
-            ;Gui, Add, Checkbox, 
-            ;MsgBox, % "Gui card check!`n" "status_w: " status_w "`nstatus_h: " status_h "`navatar_w: " avatar_w "`navatar_h: " avatar_h "`ndrop_pic_w: " drop_pic_w "`ndrop_pic_h: " drop_pic_h "`nsw: " sw "`nsh: " sh "`nsx: " sx "`nsy: " sy 
-            Return
-        }
-        
-        add_gui_options(start_x, start_y, max_w, max_h)
-        {
-            ; Standard
-            pad         := 10
-            , pad2      := pad * 2
-            , pad3      := pad * 3
-            , padh      := pad / 2
-            , pad_gb    := pad * 2.5
-            , pad_ul    := pad_gb + pad
-            , x_left    := start_x + pad
-            , gb_w      := max_w - pad
-            , font_gb   := "s12 Norm Bold cWhite"
-            , font_link := "s10 Norm Underline c00A2ED"
-            , font_def  := "s10 Norm cWhite"
-            
-            ; Updater section
-              upd_btn_w := gb_w - pad2
-            , upd_btn_h := 30
-            , upd_gb_h  := upd_btn_h + pad_ul
-            Gui, Font, % font_gb
-            Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker:
-                this.ghwnd.updater_gb := hwnd
-                last_gb := upd_gb_h
-            Gui, Font, Norm cBlack
-            Gui, Add, Button, w%upd_btn_w% h%upd_btn_h% xp+%pad% yp+%pad_gb% +HWNDhwnd +Disabled, Initializing...
-                this.gHwnd.updater_btn := hwnd
-                this.start_update_check_timer()
-                this.add_control_method(hwnd, this, "run_update")
-            
-            ; Refresh Frequency
-            slide_min   := 1
-            , slide_max := 10
-            , ref_def_h := 20
-            , ref_bud_w := 15
-            , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
-            , ref_txt_w := gb_w - pad2
-            , ref_gb_h  := ref_def_h*2 + pad_ul
-            y := last_gb + pad
-            Gui, Font, % font_gb
-            Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Check Frequency:
-                last_gb := ref_gb_h
-            Gui, Font, % font_def
-            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad_gb% +Center, 1
-            Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
-                , % this.load_interval()
-                this.gHwnd.interval_sld := hwnd
-                this.add_control_method(hwnd, this, "update_interval")
-                this.update_interval(hwnd,"","")
-            Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp +Center, 10
-            Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%padh% +Center +HWNDhwnd, Initializing...
-                this.gHwnd.cps_txt := hwnd
-                this.update_interval_per_sec()
-            
-            ; Quick link to twitch rewards claim page
-            link_list   := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
-                           ,{txt:"Streamer Drops Page"  , url:this.url.facepunch        }
-                           ,{txt:"AHK Drop Alert Home"  , url:this.url.git_homepage     } ]
-            , ql_txt_w  := gb_w - pad2
-            , ql_txt_h  := 16
-            , ql_gb_h  := ((ql_txt_h + padh) * link_list.MaxIndex()) + pad_ul - padh
-            y := last_gb + pad
-            Gui, Font, % font_gb
-            Gui, Add, Groupbox, w%gb_w% h%ql_gb_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
-                last_gb := ql_gb_h
-            Gui, Font, % font_link, Consolas
-            For index, data in link_list
+            ; Initial generation of main GUI
+            create()
             {
-                y := (index = 1 ? pad_gb : (ql_txt_h+padh))
-                Gui, Add, Text, w%ql_txt_w% h%ql_txt_h% xs+%pad% yp+%y% +HWNDhwnd, % data.txt
-                this.add_control_method(hwnd, this, "open_url", data.url)
-            }
-            Gui, Font
-            
-            ; Notify Options
-            noti_cb_w   := gb_w - pad2
-            , noti_cb_h := 16
-            , noti_edt_h:= 20
-            , noti_gb_h := (this.notify_opt.MaxIndex() * (noti_cb_h + padh)) + pad_ul - padh
-            y := last_gb + pad
-            Gui, Font, % font_gb
-            Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
-                last_gb := noti_gb_h
-            Gui, Font, % font_def
-            For index, data in this.notify_opt
-            {
-                Gui, Add, Checkbox, % "w" noti_cb_w " h" noti_cb_h " xs+" pad " " (index = 1 ? " ys+" pad_gb : " y+" padh) " +HWNDhwnd", % data.txt
-                    this.gHwnd["notify_" data.type] := hwnd
-                    value := this.load_settings("notify_pref", data.type)
-                    GuiControl,, % hwnd, % (value = "err" ? data.def : value)
-                    this.add_control_method(hwnd, this, "notify_update", data.type, hwnd)
-                    this.notify_update(data.type, hwnd)
-            }
-            Gui, Font
-            
-            ; Overlay settings
-            ; Let's build a list:
-            ; box width
-            ; box height
-            ; # of cols
-            ; bg color
-            ; online color
-            ; offline color
-            ; flash color
-            ; opacity
-            ; 
-            
-            ;~ opt_list := [{txt:"Opacity_Slider"    ,type:"Slider"   ,opt:"" ,}
-                        ;~ ,{txt:"Box_Width_Edit"    ,type:"Edit"     ,opt:"" ,}
-                        ;~ ,{txt:"Box_Height_Edit"   ,type:"Edit"     ,opt:"" ,}
-                        ;~ ,{txt:"Columns"           ,type:"Slider"   ,opt:"" ,}
-                        ;~ ,{txt:"Lock"              ,type:"Checkbox" ,opt:"" ,}
-                        ;~ ,{txt:"Color: Background" ,type:"Pic"      ,opt:"" ,,color:"black"  }
-                        ;~ ,{txt:"Color: Online"     ,type:"Pic"      ,opt:"" ,,color:"green"  }
-                        ;~ ,{txt:"Color: Offline"    ,type:"Pic"      ,opt:"" ,,color:"red"    }
-                        ;~ ,{txt:"Color: Flash"      ,type:"Pic"      ,opt:"" ,,color:"fuschia"} ]
-            
-            opt_list := [{txt:"Opacity" ,type:"Slider"      ,opt:"", rangel:1, rangeh:this.streamer_data.MaxIndex()}
-                        ,{txt:"Columns" ,type:"Slider"      ,opt:"", rangel:1, rangeh:100}
-                        ,{txt:"Lock"    ,type:"Checkbox"    ,opt:""}]
-            txt_h       := 16
-            txt_w       := gb_w - pad2
-            buddy_h     := 20
-            buddy_w     := 15
-            cb_h        := 16
-            cb_w        := gb_w - pad2
-            slider_h    := 20
-            slider_w    := gb_w - (buddy_w*2) - pad
-            ovr_gb_h    := (3*txt_h) + (2*slider_h) + (pad*5) + pad_ul
-            y := last_gb + pad
-            Gui, Font, % font_gb
-            Gui, Add, Groupbox, w%gb_w% h%ovr_gb_h% xs ys+%y% +HWNDhwnd Section, Overlay Settings:
-                last_gb := ovr_gb_h
-            Gui, Font, % font_def
-            Gui, Add, Checkbox, w%cb_w% h%cb_h% xs+%pad% ys+%pad_gb%, Click-Through (Lock)
-            
-            ; Donations quick links
-            link_list   := [{txt:"Ko-Fi Donation"   , url:this.url.patreon  }
-                           ,{txt:"Patreon Donation" , url:this.url.kofi     } ]
-            , ql_txt_w  := gb_w - pad2
-            , ql_txt_h  := 16
-            , ql_gb_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad_ul
-            y := max_h - ql_gb_h + pad
-            Gui, Font, % font_gb
-            Gui, Add, Groupbox, w%gb_w% h%ql_gb_h% xs y%y% +HWNDhwnd Section, Donate:
-                last_gb := ql_gb_h
-            Gui, Font, % font_link, Consolas
-            For index, data in link_list
-            {
-                y := (index = 1 ? " ys+" pad_gb : " y+" padh)
-                ;y := (index = 1 ? pad_gb : (ql_txt_h+padh))
-                Gui, Add, Text, w%ql_txt_w% h%ql_txt_h% xs+%pad% %y% +HWNDhwnd, % data.txt
-                this.add_control_method(hwnd, this, "open_url", data.url)
-            }
-            Gui, Font
-            
-            ; Blank 
-            ;y := last_gb + pad
-            ;Gui, Font, Bold
-            ;Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
-            ;    last_gb := ql_gui_h
-            ;Gui, Font, s10 Norm cWhite
-            Return
-        }
-        
-        check_all(state)
-        {
-            For index, user in this.streamer_data
-                GuiControl,, % this.ghwnd[user.username].notify_cb, % state
-            Return
-        }
-        
-        notify_update(type, hwnd)
-        {
-            GuiControlGet, state,, % hwnd
-            this.save_settings("notify_pref", type, state)  ; Save to settins file
-            If (type = "file"){
+                pad             := 10
+                , padh          := Round(pad/2)
+                , padq          := Round(pad/4)
+                , pad2          := Round(pad*2)
+                , gui_h         := 800
+                , card_w        := 200
+                , card_h        := 270
+                , btn_w         := 90
+                , btn_h         := 30
+                , strm_total    := rust_dc.streamer_data.MaxIndex()
+                , cards_per_col := (strm_total < 10)
+                                   ? 3 
+                                   : Ceil(strm_total/3)
+                , row_total     := Ceil(rust_dc.streamer_data.MaxIndex() / cards_per_col)
+                , opt_w         := 200
+                , opt_h         := (row_total * card_h) + ((row_total-1) * pad)
+                , gui_w         := opt_w + (cards_per_col * card_w) + (cards_per_col * pad)
+                , err_gb_h      := 40
+                , err_gb_w      := Round(gui_w/2 - pad*2)
+                , err_txt_w     := Round(err_gb_w - 2)
                 
-            }
-            Return
-        }
-        
-        load_interval()
-        {
-            i := this.load_settings("main_gui", "interval")
-            Return (i = "Err")  ? 6
-                :  (i < 1)      ? 1
-                :  (i > 10)     ? 10
-                :                 i
-        }
-        
-        update_interval_per_sec()
-        {
-            GuiControl, , % this.gHwnd.cps_txt
-                , % "Checking every " Round(60 / this.interval) " seconds" 
-            Return 
-        }
-        
-        start_update_check_timer()
-        {
-            bf  := ObjBindMethod(this, "update_check")
-            SetTimer, % bf, -60000
-            Return
-        }
-        
-        update_interval(hwnd)
-        {
-            GuiControlGet, interval,, % hwnd
-            this.interval := interval
-            this.update_interval_per_sec()
-            this.next_beat(1)
-            Return
-        }
-        
-        notify_action(name, hwnd, GuiEvent, EventInfo, ErrLevel:="")
-        {
-            GuiControlGet, state, , % hwnd                  ; Get check state
-            this.notify_list[name] := state                 ; Update state into notify list
-            this.save_settings("notify_list", name, state)  ; Save to settins file
-            this.heartbeat()                                ; Do a check
-            Return
-        }
-        
-        update_gui()
-        {
-            txt := ""
-            For index, user in this.streamer_data
-            {
-                ; Get current text
-                GuiControlGet, txt,, % this.gHwnd[user.username].status_txt
+                ; Creates the base GUI
+                Gui, Main:New, +Caption -ToolWindow +HWNDhwnd, % rust_dc.title
+                    this.gHwnd.main := {gui:hwnd}
+                Gui, Main:Default
+                Gui, Margin, % pad, % pad
+                Gui, Color, 0x000000, 0x606060
+                Gui, Font, s12 cWhite
                 
-                ; Don't update if status hasn't changed
-                If ((txt = "live") && (user.status))
-                    Continue
-                Else If ((txt = "offline") && !user.status)
-                    Continue
-                Else
+                ; Build options area
+                this.add_gui_options(pad, pad, opt_w, opt_h)
+                
+                ; Build streamer area right of it
+                mx := 0
+                For index, user in this.streamer_data
+                    (++mx > cards_per_col ? mx := 1 : "")
+                    , my := Ceil(A_Index/cards_per_col) 
+                    , x  := (card_w * (mx-1)) + (pad*mx) + opt_w
+                    , y  := (card_h * (my-1)) + (pad*my)
+                    , this.add_card(index, user, card_w, card_h, x, y)
+                
+                ; Add error area to display errors as they come
+                Gui, Add, GroupBox, w%err_gb_w% h%err_gb_h% xm y+%pad% +HWNDhwnd Section, Error Messages:
+                    this.gHwnd.main.error_gb := hwnd
+                Gui, Font, s8 cWhite
+                Gui, Add, Edit, w%err_gb_w% xp yp+20 ReadOnly R1 +HWNDhwnd, FAKE ERROR MESSAGE FOR TESTING!
+                    this.gHwnd.main.error_txt := hwnd
+                
+                ; Add all the buttons to the bottom area
+                ; Exit button
+               x := gui_w - btn_w - pad
+                Gui, Font, s10
+                Gui, Add, Button, w%btn_w% h%btn_h% x%x% y+-%btn_h% HWNDhwnd, Exit
+                    rust_dc.add_control_method(hwnd, "rust_dc", "quit")
+                ; Hide button
+                x := pad + btn_w
+                Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Hide
+                    rust_dc.add_control_method(hwnd, this, "hide")
+                ; Uncheck all button
+                x := pad + btn_w
+                Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Uncheck All
+                    rust_dc.add_control_method(hwnd, this, "check_all_streamers", 0)
+                ; Check all button
+                x := pad + btn_w
+                Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Check All
+                    rust_dc.add_control_method(hwnd, this, "check_all_streamers", 1)
+                
+                ; Add overlay button
+                x := (pad2 + btn_w)
+                Gui, Add, Button, w%btn_w% h%btn_h% xp-%x% yp HWNDhwnd, Overlay
+                    rust_dc.add_control_method(hwnd, this.overlay, "show")
+                
+                ; Allows the gui to be clicked and dragged
+                bf := ObjBindMethod(this, "WM_LBUTTONDOWN", A_Gui)
+                OnMessage(0x201, bf)
+                bf := ObjBindMethod(this, "WM_EXITSIZEMOVE", A_Gui)
+                OnMessage(0x232, bf)
+                Return
+            }
+            
+            add_card(index, user, sw, sh, sx, sy)
+            {
+                pad             := 10
+                , pad2          := pad*2
+                , padh          := pad/2
+                , padq          := pad/4
+                , status_w      := 70
+                , status_h      := 20
+                , avatar_w      := 50
+                , avatar_h      := 50
+                , drop_pic_w    := sw - pad
+                , drop_pic_h    := drop_pic_w
+                , notify_cb_w   := sw/2
+                , notify_cb_h   := 20
+                , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
+                , action_btn_h  := avatar_h - notify_cb_h - pad
+                , name          := user.username
+                , this.gHwnd.main[name] := {}
+                
+                Gui, Main:Default
+                Gui, Font, S12 Bold q5 cWhite
+                ; Create groupbox border and add username to groupbox
+                Gui, Add, GroupBox, w%sw% h%sh% x%sx% y%sy%, % name
+                
+                ; Add status background to groupbox border
+                x := sw - status_w - padh
+                Gui, Add, Picture, w%status_w% h%status_h% xp+%x% yp HWNDhwnd, % this.path["img_" (user.status ? "online" : "offline")]
+                    this.gHwnd.main[name].status_pic := hwnd
+                ; Add status text
+                Gui, Font, S10 Bold q5 cBlack
+                Gui, Add, Text, w%status_w% h%status_h% xp yp+2 +Center HWNDhwnd
+                    , % user.status ? "LIVE" : "OFFLINE"
+                    this.transparent_bg(hwnd)
+                    this.gHwnd.main[name].status_txt := hwnd
+                
+                ; Drop_pic image
+                x := sx + padh
+                Gui, Add, Picture, w%drop_pic_w% h%drop_pic_h% x%x% yp+20 +Border, % user.drop_pic_loc
+                ; Drop_name description
+                h := 30
+                Gui, Font, S10 Norm q5 cWhite
+                Gui, Add, Text, wp h%h% xp y+-%h% HWNDhwnd +Center +Border +0x200, % user.drop_name
+                
+                ; User's icon
+                Gui, Add, Picture, w%avatar_w% h%avatar_h% xp y+0 +Border +Section, % user.avatar_loc
+                ; Add snooze/dismiss buttons
+                Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%padh% yp+%padh% +HWNDhwnd, Snooze
+                    this.gHwnd.main[name].snooze_btn := hwnd
+                Gui, Add, Button, w%action_btn_w% h%action_btn_h% x+%pad% yp +HWNDhwnd, Dismiss
+                    this.gHwnd.main[name].dismiss_btn := hwnd
+                
+                ; Add notify checkbox
+                Gui, Font, S10 Bold q5
+                w := sw - avatar_w - pad2
+                y := notify_cb_h
+                x := avatar_w + pad
+                Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% +HWNDhwnd, Notify Me!
+                    this.gHwnd.main[name].notify_cb := hwnd
+                    rust_dc.add_control_method(hwnd, this, "notify_action", name)
+                    GuiControl,, % hwnd, % this.notify_list[name]
+                ; Hide the buttons until they're needed
+                GuiControl, Hide, % this.gHwnd.main[name].snooze_btn
+                GuiControl, Hide, % this.gHwnd.main[name].dismiss_btn
+                
+                ; Add "notify me" checkbox below group box
+                ;Gui, Add, Checkbox, 
+                ;MsgBox, % "Gui card check!`n" "status_w: " status_w "`nstatus_h: " status_h "`navatar_w: " avatar_w "`navatar_h: " avatar_h "`ndrop_pic_w: " drop_pic_w "`ndrop_pic_h: " drop_pic_h "`nsw: " sw "`nsh: " sh "`nsx: " sx "`nsy: " sy 
+                Return
+            }
+            
+            add_gui_options(start_x, start_y, max_w, max_h)
+            {
+                ; Standard
+                pad         := 10
+                , pad2      := pad * 2
+                , pad3      := pad * 3
+                , padh      := pad / 2
+                , pad_gb    := pad * 2.5
+                , pad_ul    := pad_gb + pad
+                , x_left    := start_x + pad
+                , gb_w      := max_w - pad
+                , font_gb   := "s12 Norm Bold cWhite"
+                , font_link := "s10 Norm Underline c00A2ED"
+                , font_def  := "s10 Norm cWhite"
+                
+                ; Updater section
+                  upd_btn_w := gb_w - pad2
+                , upd_btn_h := 30
+                , upd_gb_h  := upd_btn_h + pad_ul
+                Gui, Font, % font_gb
+                Gui, Add, GroupBox, w%gb_w% h%upd_gb_h% x%start_x% y%start_y% Section +HWNDhwnd, Update Checker:
+                    this.gHwnd.main.updater_gb := hwnd
+                    last_gb := upd_gb_h
+                Gui, Font, Norm cBlack
+                Gui, Add, Button, w%upd_btn_w% h%upd_btn_h% xp+%pad% yp+%pad_gb% +HWNDhwnd +Disabled, Initializing...
+                    this.gHwnd.main.updater_btn := hwnd
+                    this.start_update_check_timer()
+                    rust_dc.add_control_method(hwnd, this, "run_update")
+                
+                ; Refresh Frequency
+                slide_min   := 1
+                , slide_max := 10
+                , ref_def_h := 20
+                , ref_bud_w := 15
+                , ref_sld_w := gb_w - (ref_bud_w*2) - pad2
+                , ref_txt_w := gb_w - pad2
+                , ref_gb_h  := ref_def_h*2 + pad_ul
+                y := last_gb + pad
+                Gui, Font, % font_gb
+                Gui, Add, GroupBox, w%gb_w% h%ref_gb_h% xs ys+%y% Section, Check Frequency:
+                    last_gb := ref_gb_h
+                Gui, Font, % font_def
+                Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad_gb% +Center, 1
+                Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
+                    , % this.interval_load()
+                    this.gHwnd.main.interval_sld := hwnd
+                    rust_dc.add_control_method(hwnd, this, "interval_slider_moved")
+                    this.interval_slider_moved(hwnd,"","")
+                Gui, Add, Text, w%ref_bud_w% h%ref_def_h% x+0 yp +Center, 10
+                Gui, Add, Text, w%ref_txt_w% h%ref_def_h% xs+%pad% y+%padh% +Center +HWNDhwnd, Initializing...
+                    this.gHwnd.main.cps_txt := hwnd
+                    this.interval_per_second_update()
+                
+                ; Quick link to twitch rewards claim page
+                link_list   := [{txt:"Twitch Rewards Page"  , url:this.url.twitch_rewards   }
+                               ,{txt:"Streamer Drops Page"  , url:this.url.facepunch        }
+                               ,{txt:"AHK Drop Alert Home"  , url:this.url.git_homepage     } ]
+                , ql_txt_w  := gb_w - pad2
+                , ql_txt_h  := 16
+                , ql_gb_h  := ((ql_txt_h + padh) * link_list.MaxIndex()) + pad_ul - padh
+                y := last_gb + pad
+                Gui, Font, % font_gb
+                Gui, Add, Groupbox, w%gb_w% h%ql_gb_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
+                    last_gb := ql_gb_h
+                Gui, Font, % font_link, Consolas
+                For index, data in link_list
                 {
-                    id      := this.gHwnd[user.username].status_pic
-                    path    := (user.status ? "img_online" : "img_offline")
-                    
-                    GuiControl,, % id, % this.path[path]
-                    GuiControl,, % this.gHwnd[user.username].status_txt
-                        , % (user.status ? "LIVE" : "OFFLINE")
+                    y := (index = 1 ? pad_gb : (ql_txt_h+padh))
+                    Gui, Add, Text, w%ql_txt_w% h%ql_txt_h% xs+%pad% yp+%y% +HWNDhwnd, % data.txt
+                    rust_dc.add_control_method(hwnd, this, "open_url", data.url)
                 }
+                Gui, Font
+                
+                ; Notify Options
+                noti_cb_w   := gb_w - pad2
+                , noti_cb_h := 16
+                , noti_edt_h:= 20
+                , noti_gb_h := (this.notify_opt.MaxIndex() * (noti_cb_h + padh)) + pad_ul - padh
+                y := last_gb + pad
+                Gui, Font, % font_gb
+                Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
+                    last_gb := noti_gb_h
+                Gui, Font, % font_def
+                For index, data in this.notify_opt
+                {
+                    Gui, Add, Checkbox, % "w" noti_cb_w " h" noti_cb_h " xs+" pad " " (index = 1 ? " ys+" pad_gb : " y+" padh) " +HWNDhwnd", % data.txt
+                        this.gHwnd.main["notify_" data.type] := hwnd
+                        value := this.load_settings("notify_pref", data.type)
+                        GuiControl,, % hwnd, % (value = "err" ? data.def : value)
+                        rust_dc.add_control_method(hwnd, this, "notify_checkbox_checked", data.type, hwnd)
+                        this.notify_checkbox_checked(data.type, hwnd)
+                }
+                Gui, Font
+                
+                ; Overlay settings
+                ; Let's build a list:
+                ; box width
+                ; box height
+                ; # of cols
+                ; bg color
+                ; online color
+                ; offline color
+                ; flash color
+                ; opacity
+                ; 
+                
+                ;~ opt_list := [{txt:"Opacity_Slider"    ,type:"Slider"   ,opt:"" ,}
+                            ;~ ,{txt:"Box_Width_Edit"    ,type:"Edit"     ,opt:"" ,}
+                            ;~ ,{txt:"Box_Height_Edit"   ,type:"Edit"     ,opt:"" ,}
+                            ;~ ,{txt:"Columns"           ,type:"Slider"   ,opt:"" ,}
+                            ;~ ,{txt:"Lock"              ,type:"Checkbox" ,opt:"" ,}
+                            ;~ ,{txt:"Color: Background" ,type:"Pic"      ,opt:"" ,,color:"black"  }
+                            ;~ ,{txt:"Color: Online"     ,type:"Pic"      ,opt:"" ,,color:"green"  }
+                            ;~ ,{txt:"Color: Offline"    ,type:"Pic"      ,opt:"" ,,color:"red"    }
+                            ;~ ,{txt:"Color: Flash"      ,type:"Pic"      ,opt:"" ,,color:"fuschia"} ]
+                
+                opt_list := [{txt:"Opacity" ,type:"Slider"      ,opt:"", rangel:1, rangeh:this.streamer_data.MaxIndex()}
+                            ,{txt:"Columns" ,type:"Slider"      ,opt:"", rangel:1, rangeh:100}
+                            ,{txt:"Lock"    ,type:"Checkbox"    ,opt:""}]
+                txt_h       := 16
+                txt_w       := gb_w - pad2
+                buddy_h     := 20
+                buddy_w     := 15
+                cb_h        := 16
+                cb_w        := gb_w - pad2
+                slider_h    := 20
+                slider_w    := gb_w - (buddy_w*2) - pad
+                ovr_gb_h    := (3*txt_h) + (2*slider_h) + (pad*5) + pad_ul
+                y := last_gb + pad
+                Gui, Font, % font_gb
+                Gui, Add, Groupbox, w%gb_w% h%ovr_gb_h% xs ys+%y% +HWNDhwnd Section, Overlay Settings:
+                    last_gb := ovr_gb_h
+                Gui, Font, % font_def
+                Gui, Add, Checkbox, w%cb_w% h%cb_h% xs+%pad% ys+%pad_gb%, Click-Through (Lock)
+                
+                ; Donations quick links
+                link_list   := [{txt:"Ko-Fi Donation"   , url:this.url.patreon  }
+                               ,{txt:"Patreon Donation" , url:this.url.kofi     } ]
+                , ql_txt_w  := gb_w - pad2
+                , ql_txt_h  := 16
+                , ql_gb_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad_ul
+                y := max_h - ql_gb_h + pad
+                Gui, Font, % font_gb
+                Gui, Add, Groupbox, w%gb_w% h%ql_gb_h% xs y%y% +HWNDhwnd Section, Donate:
+                    last_gb := ql_gb_h
+                Gui, Font, % font_link, Consolas
+                For index, data in link_list
+                {
+                    y := (index = 1 ? " ys+" pad_gb : " y+" padh)
+                    ;y := (index = 1 ? pad_gb : (ql_txt_h+padh))
+                    Gui, Add, Text, w%ql_txt_w% h%ql_txt_h% xs+%pad% %y% +HWNDhwnd, % data.txt
+                    rust_dc.add_control_method(hwnd, this, "open_url", data.url)
+                }
+                Gui, Font
+                
+                ; Blank 
+                ;y := last_gb + pad
+                ;Gui, Font, Bold
+                ;Gui, Add, Groupbox, w%gb_w% h%ql_gui_h% xs ys+%y% +HWNDhwnd Section, Quick Links:
+                ;    last_gb := ql_gui_h
+                ;Gui, Font, s10 Norm cWhite
+                Return
             }
-            Return
-        }
-        
-        transparent_bg(hwnd)
-        {
-            GuiControl, +BackgroundTrans, % hwnd
-            Return
-        }
-        
-        WM_LBUTTONDOWN()
-        {
-            If (A_Gui = "Main")
+            
+            check_all_streamers(state)
             {
-                MouseGetPos,,,, con
-                If !InStr(con, "button") && !InStr(con, "trackbar321") && !InStr(con, "edit")
-                    SendMessage, 0x00A1, 2,,, A
+                For index, user in this.streamer_data
+                    GuiControl,, % this.gHwnd.main[user.username].notify_cb, % state
+                Return
             }
-            Return
+            
+            notify_checkbox_checked(label, hwnd)
+            {
+                GuiControlGet, state,, % hwnd
+                this.save_settings("notify_pref", label, state)  ; Save to settins file
+                Return
+            }
+            
+            interval_load()
+            {
+                i := this.load_settings("main", "interval")
+                Return (i = "Err") ? 6
+                     : (i < 1)     ? 1
+                     : (i > 10)    ? 10
+                     :               i
+            }
+            
+            get_interval()
+            {
+                GuiControlGet, interval, , % this.gHwnd.main.interval_sld
+                Return interval
+            }
+            
+            interval_per_second_update()
+            {
+                GuiControl, 
+                    , % this.gHwnd.cps_txt
+                    , % "Checking every " Round(60 / this.get_interval()) " seconds" 
+                Return 
+            }
+            
+            start_update_check_timer()
+            {
+                bf  := ObjBindMethod(this, "update_check")
+                SetTimer, % bf, -60000
+                Return
+            }
+            
+            interval_slider_moved(hwnd)
+            {
+                this.interval_per_second_update()
+                this.next_beat(1)
+                Return
+            }
+            
+            notify_action(name, hwnd, GuiEvent, EventInfo, ErrLevel:="")
+            {
+                GuiControlGet, state, , % hwnd                  ; Get check state
+                this.notify_list[name] := state                 ; Update state into notify list
+                this.save_settings("notify_list", name, state)  ; Save to settins file
+                this.heartbeat()                                ; Do a check
+                Return
+            }
+            
+            update_gui()
+            {
+                txt := ""
+                For index, user in this.streamer_data
+                {
+                    ; Get current text
+                    GuiControlGet, txt,, % this.gHwnd[user.username].status_txt
+                    
+                    ; Don't update if status hasn't changed
+                    If ((txt = "live") && (user.status))
+                        Continue
+                    Else If ((txt = "offline") && !user.status)
+                        Continue
+                    Else
+                    {
+                        id      := this.gHwnd[user.username].status_pic
+                        path    := (user.status ? "img_online" : "img_offline")
+                        
+                        GuiControl,, % id, % this.path[path]
+                        GuiControl,, % this.gHwnd[user.username].status_txt
+                            , % (user.status ? "LIVE" : "OFFLINE")
+                    }
+                }
+                Return
+            }
+            
+            transparent_bg(hwnd)
+            {
+                GuiControl, +BackgroundTrans, % hwnd
+                Return
+            }
+            
+            WM_LBUTTONDOWN()
+            {
+                If (A_Gui = "Main")
+                {
+                    MouseGetPos,,,, con
+                    If !InStr(con, "button") && !InStr(con, "trackbar321") && !InStr(con, "edit")
+                        SendMessage, 0x00A1, 2,,, A
+                }
+                Return
+            }
+            
+            WM_EXITSIZEMOVE()
+            {
+                this.save_last_xy()
+                Return
+            }
+            
+            load_last_xy()
+            {
+                this.last_x := this.load_settings("main", "last_x")
+                this.last_y := this.load_settings("main", "last_y")
+                Return
+            }
+            
+            update_last_xy()
+            {
+                WinGetPos, x, y,,, % "ahk_id " this.gHwnd.gui_main
+                this.last_x := x
+                , this.last_y := y
+                Return
+            }
+            
+            save_last_xy()
+            {
+                this.update_last_xy()
+                (this.last_x*0 = 0) ? this.save_settings("main", "last_x", this.last_x) : ""
+                (this.last_y*0 = 0) ? this.save_settings("main", "last_y", this.last_y) : ""
+                Return
+            }
+            
+            Show()
+            {
+                this.load_last_xy()
+                (this.last_x*0 = 0 ? "" : this.last_x := 0)
+                (this.last_y*0 = 0 ? "" : this.last_y := 0)
+                Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % this.gui_name ;Center, % this.title
+                this.visible := True
+                this.systray.update_tray_show_hide()
+            }
+            
+            Hide()
+            {
+                this.save_last_xy()
+                Gui, Main:Hide
+                this.visible := False
+                this.systray.update_tray_show_hide()
+            }
+            
+            Toggle()
+            {
+                this.visible
+                    ? this.Hide() 
+                    : this.Show()
+            }
+        }    
+        
+        Class splash extends guis
+        {
+            Static  font_opt   := "s20 Bold "
+            start(msg)
+            {
+                pad         := 10
+                , padO      := 12
+                , pad2      := pad*2
+                , padO2     := padO*2
+                , gui_w     := 220
+                , gui_h     := 220
+                , txt_w     := gui_w - pad2
+                , txt_h     := gui_h - pad2
+                , scrn_t    := scrn_r := scrn_b := scrn_l := 0
+                , this.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
+                , this.img_getter(this.url.img_rust_symbol, this.path.img, "img_rust_symbol.png")
+                
+                Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
+                    this.gHwnd.gui_splash := hwnd
+                Gui, splash:Default
+                Gui, Margin, 0, 0
+                Gui, Color, 0x000001
+                
+                Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % this.path.img_rust_symbol
+                Gui, Font, % "s20 cBlack Bold", Consolas
+                Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
+                    this.gHwnd.spalsh_txt_shadow := hwnd
+                Gui, Font, % "s20 cWhite Norm", Consolas
+                Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
+                    this.gHwnd.splash_txt := hwnd
+                x := scrn_r - scrn_l - gui_w
+                y := scrn_b - scrn_t - gui_h
+                Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
+                this.animate()
+                Return
+            }
+            
+            update(txt)
+            {
+                Gui, Splash:Default
+                Gui, Font, % "s20 cBlack Bold", Consolas
+                GuiControl,, % this.gHwnd.spalsh_txt_shadow, % "`n" txt
+                Gui, Font, % "s20 cWhite Norm", Consolas
+                GuiControl,, % this.gHwnd.splash_txt, % "`n" txt
+                Gui, Splash:Show, AutoSize
+            }
+            
+            animate()
+            {
+                ;MsgBox animation code here
+                Return
+            }
+            
+            finish()
+            {
+                bf := ObjBindMethod(this, "Destroy")
+                SetTimer, % bf, -700
+            }
+            
+            Destroy()
+            {
+                Gui, splash:Destroy
+            }
         }
         
-        WM_EXITSIZEMOVE()
-        {
-            this.save_last_xy()
-            Return
-        }
-        
-        load_last_xy()
-        {
-            this.last_x := this.load_settings("main_gui", "last_x")
-            this.last_y := this.load_settings("main_gui", "last_y")
-            Return
-        }
-        
-        update_last_xy()
-        {
-            WinGetPos, x, y,,, % "ahk_id " this.gHwnd.gui_main
-            this.last_x := x
-            , this.last_y := y
-            Return
-        }
-        
-        save_last_xy()
-        {
-            this.update_last_xy()
-            (this.last_x*0 = 0) ? this.save_settings("main_gui", "last_x", this.last_x) : ""
-            (this.last_y*0 = 0) ? this.save_settings("main_gui", "last_y", this.last_y) : ""
-            Return
-        }
-        
-        Show()
-        {
-            this.load_last_xy()
-            (this.last_x*0 = 0 ? "" : this.last_x := 0)
-            (this.last_y*0 = 0 ? "" : this.last_y := 0)
-            Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % this.gui_name ;Center, % this.title
-            this.visible := True
-            this.systray.update_tray_show_hide()
-        }
-        
-        Hide()
-        {
-            this.save_last_xy()
-            Gui, Main:Hide
-            this.visible := False
-            this.systray.update_tray_show_hide()
-        }
-        
-        Toggle()
-        {
-            this.visible
-                ? this.Hide() 
-                : this.Show()
-        }
     }
     
-    Class splash extends rust_dc
-    {
-        Static  font_opt   := "s20 Bold "
-        start(msg)
-        {
-            pad         := 10
-            , padO      := 12
-            , pad2      := pad*2
-            , padO2     := padO*2
-            , gui_w     := 220
-            , gui_h     := 220
-            , txt_w     := gui_w - pad2
-            , txt_h     := gui_h - pad2
-            , scrn_t    := scrn_r := scrn_b := scrn_l := 0
-            , this.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
-            , this.img_getter(this.url.img_rust_symbol, this.path.img, "img_rust_symbol.png")
-            
-            Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
-                this.gHwnd.gui_splash := hwnd
-            Gui, splash:Default
-            Gui, Margin, 0, 0
-            Gui, Color, 0x000001
-            
-            Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % this.path.img_rust_symbol
-            Gui, Font, % "s20 cBlack Bold", Consolas
-            Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                this.gHwnd.spalsh_txt_shadow := hwnd
-            Gui, Font, % "s20 cWhite Norm", Consolas
-            Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                this.gHwnd.splash_txt := hwnd
-            x := scrn_r - scrn_l - gui_w
-            y := scrn_b - scrn_t - gui_h
-            Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
-            this.animate()
-            Return
-        }
-        
-        update(txt)
-        {
-            Gui, Splash:Default
-            Gui, Font, % "s20 cBlack Bold", Consolas
-            GuiControl,, % this.gHwnd.spalsh_txt_shadow, % "`n" txt
-            Gui, Font, % "s20 cWhite Norm", Consolas
-            GuiControl,, % this.gHwnd.splash_txt, % "`n" txt
-            Gui, Splash:Show, AutoSize
-        }
-        
-        animate()
-        {
-            ;MsgBox animation code here
-            Return
-        }
-        
-        finish()
-        {
-            bf := ObjBindMethod(this, "Destroy")
-            SetTimer, % bf, -700
-        }
-        
-        Destroy()
-        {
-            Gui, splash:Destroy
-        }
-    }
+
     
     ; Show/Hide Gui (default)
     ; Overlay Control
@@ -1146,7 +1017,7 @@ Class rust_dc
             Menu, Tray, NoStandard                              ; Clean slate
             this.icon_reset()
             
-            bf := ObjBindMethod(this.main_gui, "toggle")
+            bf := ObjBindMethod(this.main, "toggle")
             Menu, Tray, Add, Show, % bf                         ; Show/hide option
             Menu, Tray, Default, 1&                             ; Set show/hide to default
             
@@ -1175,7 +1046,7 @@ Class rust_dc
         
         update_tray_show_hide()
         {
-            Menu, Tray, Rename, 1&, % (this.main_gui.visible ? "Hide" : "Show")
+            Menu, Tray, Rename, 1&, % (this.main.visible ? "Hide" : "Show")
             Return
         }
         
@@ -1252,28 +1123,7 @@ Class rust_dc
         SysGet, m, MonitorWorkArea, % m_num
         Return
     }
-    
-    shutdown()
-    {
-        this.save_log()                             ; Save error logs
-        this.main_gui.save_last_xy()                ; Save last coords
-        this.save_settings("main_gui", "interval"   ; Save frequency of checking
-            , this.main_gui.interval)
-        
-        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?
-        ; IfMsgBox, Yes
-        ;     FileRemoveDir, % this.path.app, 1
-        Return
-    }
-    
-    quit()
-    {
-        MsgBox, 0x4, Exiting, Close program?
-        IfMsgBox, Yes
-            ExitApp
-        Return
-    }
-    
+
     update_check(verbose := 0)
     {
         online_version  := Trim(this.web_get(this.url.update), " `t`r`n")
@@ -1295,15 +1145,167 @@ Class rust_dc
         
         Gui, Main:Default
         ; Set the Updater Groupbox text and color
-        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.main_gui.gHwnd.updater_gb
+        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.main.gHwnd.updater_gb
         ; Set the button text
         Gui, Font, Norm cBlack
-        GuiControl, Text, % this.main_gui.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
+        GuiControl, Text, % this.main.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
         ; Enable/disable
-        GuiControl, % (update_found ? "Enable" : "Disable"), % this.main_gui.gHwnd.updater_btn
+        GuiControl, % (update_found ? "Enable" : "Disable"), % this.main.gHwnd.updater_btn
         Return
     }
     
+    ; ####################
+    ; ##  Startup/Exit  ##
+    ; ####################
+    Start()
+    {
+        splash := ObjBindMethod(rust_dc.splash, "update")
+        
+        this.splash.start("Starting up`n" this.title)
+        
+        splash.("Setting`nShutdown`nFunctions")                                                                 ; Set shutdown processes
+        , OnExit(this.use_method(this, "shutdown"))
+        splash.("Creating`nFolders")                                                                            ; Create program folders
+        , this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
+        splash.("Downloading`nStreamer Data")                                                                   ; Get fresh streamer data
+        , this.get_streamer_data()
+        splash.("Creating`nStreamer`nFolders")                                                                  ; Create streamer folders
+        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
+        splash.("Loading`nLog")                                                                                 ; Load error log
+        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
+        splash.("Downloading`nImages")                                                                          ; Download images
+        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
+        splash.("Creating`nFolders")                                                                            ; Generate system tray
+        , this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
+        splash.("Generating`nNotify List")                                                                      ; Create and load notify_list settings
+        , this.generate_notify_list()
+        splash.("Creating`nGUI")                                                                                ; Create GUI
+        , this.main.create()
+        this.main.Show()                                                                                    ; Show GUI
+        splash.("Update`nCheck!")                                                                               ; Check for updates!
+        , this.update_check(1)
+        splash.("Starting`nheartbeat.`n(CLEAR!!!)")                                                             ; Start heartbeat
+        , this.heartbeat()
+        , splash.("It's alive!")
+        , this.splash.finish()
+        Return
+    }
+    
+    load_log()
+    {
+        status := 0
+        If (FileExist(this.path.log) = "")
+        {
+            FileAppend, % "Log file created: " A_Now "`n`n", % this.path.log
+            If ErrorLevel
+                this.error(A_ThisFunc, "Could not create a new log file.", 1)
+                , status := 1
+        }
+        FileRead, err_log, % this.path.log
+        this.err_log := err_log
+        Return status
+    }
+
+    download_images()
+    {
+        Status := 0
+        ; Make sure streamer data is there
+        If !IsObject(this.streamer_data)
+            Return -3
+        
+        ; Loop through each streamer, download, and save their avatars and item drops
+        For index, user in this.streamer_data
+            For i, type in ["avatar","drop_pic"]
+                ext         := ""
+                , url       := user[type "_url"]
+                , RegExMatch(url, this.rgx.ext, ext)
+                , path      := this.path.streamers "\" user.username
+                , file      := type "." ext
+                , this.streamer_data[index][type "_loc"] := path "\" file
+                , (this.img_getter(url, path, type "." ext) = 1) ? status := 1 : ""
+        
+        ; Get downloadable images
+        For key, value in this.url
+            InStr(value, ".png")
+                ? (this.img_getter(this.url[key], this.path.img, key ".png") = 1 ? status := 1 : "")
+                : ""
+        
+        Return Status
+    }
+    
+    shutdown()
+    {
+        this.save_log()                                                     ; Save error logs
+        this.main.save_last_xy()                                        ; Save last coords
+        this.save_settings("main", "interval", this.main.interval)  ; Save frequency of checking
+        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?   
+        ; IfMsgBox, Yes
+        ;     FileRemoveDir, % this.path.app, 1
+        Return
+    }
+    
+    quit(veryify=1)
+    {
+        If verify
+        {
+            MsgBox, 0x4, Exiting, Close program?
+            IfMsgBox, No
+                Return
+        }
+        ExitApp
+        Return
+    }
+    
+    generate_notify_list()
+    {
+        this.notify_list := {}
+        For index, user in this.streamer_data
+            value := this.load_settings("notify_list", user.username)
+            , this.notify_list[user.username] := (value = "Err" ? 0 : value)
+        
+        Return
+    }
+    
+    folder_check()
+    {
+        Status := 0
+        For key, path in this.path
+            If (path = "")
+                Continue
+            Else If !InStr(path, ".") && (FileExist(path) = "")
+            {
+                FileCreateDir, % path
+                If ErrorLevel
+                    this.error(A_ThisFunc, "Unable to create directory: " this.path[A_LoopField])
+                    , status := 1
+            }
+        
+        ; Check settings file
+        If !FileExist(this.path.settings)
+            FileAppend, % "[Settings]"
+                . "`nCreated=" A_Now "`n`n"
+                , % this.path.settings
+        
+        Return status
+    }
+    
+    create_streamer_paths()
+    {
+        For index, user in this.streamer_data
+            If !FileExist(this.path.streamers "\" user.username)
+            {
+                FileCreateDir, % this.path.streamers "\" user.username
+                If ErrorLevel
+                    this.error(A_ThisFunc, "Unable to create streamer directory: " this.path.app "\" user.username)
+                    , status := 1
+            }
+        Return
+    }
+    
+
+    ; ##########################
+    ; ##  General Functionss  ##
+    ; ##########################
     run_update()
     {
         status      := 0
@@ -1410,21 +1412,22 @@ Class rust_dc
         MsgBox, % opt, % this.title, % msg
     }
     
-    ; Makes the 
+    ; Gives a red to white color changing effect to the error group box text
     err_notify_color_changer(rgb=0xFF0000)
     {
         If (rgb >= 0xFFFFFF)
             Return
-        GuiControl,, % this.gHwnd.error_txt 
-        rgb += 0x001111
+        GuiControl, c%rgb%, % this.gHwnd.error_txt 
+        rgb += 0x000101
         bf := ObjBindMethod(this, "err_notify_color_changer", rgb)
-        SetTimer, % bf, -500
+        Sleep, 1
+        SetTimer, % bf, -100
         Return
     }
     
     ; Options:
-    ; 0 = just log error
-    ; 1 = Verbose error message
+    ;  0 = just log error
+    ;  1 = Verbose error message
     ; -1 = Close script
     error(call:="func here", msg:="msg here", option:=0)
     {
@@ -1443,7 +1446,8 @@ Class rust_dc
             IfMsgBox, Yes
                 Reload
         }
-        Return 0
+        ; Always return 1
+        Return 1
     }
     
 }
