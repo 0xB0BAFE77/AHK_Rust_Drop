@@ -20,7 +20,7 @@ Return
 error codes
 -1 = HTML can't be downloaded
 -2 = Error parsing HTML
--3 = No streamer data to access
+-3 = Unused
 -4 = No streamer HTML to parse
 */
 
@@ -76,7 +76,7 @@ Class rust_dc
                                ,img_rust_symbol_2   : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol_Flash.png"
                                ,git_ver             : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,ahk_rust_checker    : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/AHK_rust_dc.ahk"
-                               ,online_version              : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
+                               ,online_version      : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,twitch_rewards      : "https://www.twitch.tv/drops/inventory"
                                ,kofi                : "https://ko-fi.com/0xb0bafe77"
                                ,patreon             : "https://www.patreon.com/0xB0BAFE77"
@@ -142,19 +142,26 @@ Class rust_dc
         ; Load error log
         splash.("Loading`nLog")
         this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
-        splash.("Downloading`nImages")                                                                          ; Download images
+        ; Download images
+        splash.("Downloading`nImages")
         this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
-        splash.("Creating`nFolders")                                                                            ; Generate system tray
+        ; Generate system tray
+        splash.("Creating`nFolders")
         this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
-        splash.("Generating`nNotify List")                                                                      ; Create and load notify_list settings
+        ; Create and load notify_list settings
+        splash.("Generating`nNotify List")
         this.generate_notify_list()
-        splash.("Creating`nGUI")                                                                                ; Create GUI
+        ; Create GUI
+        splash.("Creating`nGUI")
         this.main.create()
-        this.main.Show()                                                                                        ; Show GUI
-        splash.("Update`nCheck!")                                                                               ; Check for updates!
+        this.main.Show()
+        ; Check for updates!
+        splash.("Update`nCheck!")
         this.update_check(1)
-        splash.("Starting`nheartbeat.`n(CLEAR!!!)")                                                             ; Start heartbeat
+        ; Start heartbeat
+        splash.("Starting`nheartbeat.`n(CLEAR!!!)")
         this.heartbeat()
+        ; Done
         splash.("It's alive!")
         this.splash.finish()
         Return
@@ -178,10 +185,6 @@ Class rust_dc
     download_images()
     {
         Status := 0
-        ; Make sure streamer data is there
-        If !IsObject(this.streamer_data)
-            Return -3
-        
         ; Loop through each streamer, download, and save their avatars and item drops
         For index, user in this.streamer_data
             For i, type in ["avatar","drop_pic"]
@@ -1450,14 +1453,14 @@ msg(txt)
 FAQ
 Answering any questions here and also taking suggestions.
 
-Will this auto-log into my account and save my passwords?
-Nope. The script is open source and there's no good way to securely store your password. Thus, all logging in/out has to be done by the user.  
-Plus, this protects me because no one can be like "Your program let me info out!" Pfft. No, it didn't.
-
 Is this going to log my password/keystrokes?  
 No... It's an open source program. You can look at the code. The only data transmission going on is to the facepunch servers to get up-to-date HTML and to GitHub to get files like images. No other send/get requests are sent.  
 If you're still doubtful, don't use it. I R N0T tRY1Ng 2 HAX0R UR .nfo ¯\_(-_-)_/¯  
 The purpose of this is to help the community get skins.  
+
+Will this auto-log into my account and save my passwords?
+Nope. The script is open source and there's no good way to securely store your password. Thus, all logging in/out has to be done by the user.  
+Plus, this protects me because no one can be like "Your program let me info out!" Pfft. No, it didn't.
 
 Can I set it to automatically open up the streamer when they come on?  
 Yes. It's one of the "notification" options. But it's the user's responsibility to be logged into twitch and to have their accounts linked. There are instructions about this at script launch.  
