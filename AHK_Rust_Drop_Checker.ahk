@@ -77,7 +77,7 @@ Class rust_dc
                                ,img_rust_symbol_2   : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/img/Rust_Symbol_Flash.png"
                                ,git_ver             : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,ahk_rust_checker    : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/AHK_rust_dc.ahk"
-                               ,update              : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
+                               ,online_version              : "https://github.com/0xB0BAFE77/AHK_Rust_Drop/raw/main/version.txt"
                                ,twitch_rewards      : "https://www.twitch.tv/drops/inventory"
                                ,kofi                : "https://ko-fi.com/0xb0bafe77"
                                ,patreon             : "https://www.patreon.com/0xB0BAFE77"
@@ -119,7 +119,7 @@ Class rust_dc
                                ,"cps_txt"           : ""
                                ,"gui_splash"        : ""} 
     
-        ; ####################
+    ; ####################
     ; ##  Startup/Exit  ##
     ; ####################
     Start()
@@ -128,31 +128,36 @@ Class rust_dc
         
         this.splash.start("Starting up`n" this.title)
         
-        splash.("Setting`nShutdown`nFunctions")                                                                 ; Set shutdown processes
-        , OnExit(this.use_method(this, "shutdown"))
-        splash.("Creating`nFolders")                                                                            ; Create program folders
-        , this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
-        splash.("Downloading`nStreamer Data")                                                                   ; Get fresh streamer data
-        , this.get_streamer_data()
-        splash.("Creating`nStreamer`nFolders")                                                                  ; Create streamer folders
-        , this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
-        splash.("Loading`nLog")                                                                                 ; Load error log
-        , this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
+        ; Set shutdown processes
+        splash.("Setting`nShutdown`nFunctions")
+        OnExit(this.use_method(this, "shutdown"))
+        ; Create program folders
+        splash.("Creating`nFolders")
+        this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
+        ; Get fresh streamer data
+        splash.("Downloading`nStreamer Data")
+        this.get_streamer_data()
+        ; Create streamer folders
+        splash.("Creating`nStreamer`nFolders")
+        this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
+        ; Load error log
+        splash.("Loading`nLog")
+        this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
         splash.("Downloading`nImages")                                                                          ; Download images
-        , this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
+        this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
         splash.("Creating`nFolders")                                                                            ; Generate system tray
-        , this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
+        this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
         splash.("Generating`nNotify List")                                                                      ; Create and load notify_list settings
-        , this.generate_notify_list()
+        this.generate_notify_list()
         splash.("Creating`nGUI")                                                                                ; Create GUI
-        , this.main.create()
-        this.main.Show()                                                                                    ; Show GUI
+        this.main.create()
+        this.main.Show()                                                                                        ; Show GUI
         splash.("Update`nCheck!")                                                                               ; Check for updates!
-        , this.update_check(1)
+        this.update_check(1)
         splash.("Starting`nheartbeat.`n(CLEAR!!!)")                                                             ; Start heartbeat
-        , this.heartbeat()
-        , splash.("It's alive!")
-        , this.splash.finish()
+        this.heartbeat()
+        splash.("It's alive!")
+        this.splash.finish()
         Return
     }
     
@@ -1218,7 +1223,7 @@ Class rust_dc
 
     update_check(verbose := 0)
     {
-        online_version  := Trim(this.web_get(this.url.update), " `t`r`n")
+        online_version  := Trim(this.web_get(this.url.online_version), " `t`r`n")
         update_found    := 0
         Loop, % StrLen(this.version)
             If (SubStr(this.version, A_Index, 1) = SubStr(online_version, A_Index, 1))
@@ -1338,7 +1343,7 @@ Class rust_dc
         Catch
         {
             this.error(A_ThisFunc, "Error getting data from site: " url)
-            Return "Err"
+            Return 1
         }
         Return web.ResponseText
     }
@@ -1412,7 +1417,7 @@ Class rust_dc
     ;  0 = just log error
     ;  1 = Verbose error message
     ; -1 = Close script
-    error(call:="func here", msg:="msg here", option:=0)
+    error(call, msg, option:=0)
     {
         ; Log error
         this.err_last   := A_Now "`nCall: " call "`nMessage: " msg
