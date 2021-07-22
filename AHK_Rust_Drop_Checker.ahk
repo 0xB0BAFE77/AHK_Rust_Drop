@@ -37,7 +37,6 @@ Add notification settings:
     A prime example of use for this would be for live posting to a discord server.
 Updater/Version Checker
 
-
 */
 
 Class rust_dc
