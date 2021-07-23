@@ -125,45 +125,56 @@ Class rust_dc
     {
         splash := ObjBindMethod(rust_dc.guis.splash, "update")
         
-        this.splash.start("Starting up`n" this.title)
+        rust_dc.guis.splash.start("Starting up`n" this.title)
         
         ; Set shutdown processes
         splash.("Setting`nShutdown`nFunctions")
-        OnExit(this.use_method(this, "shutdown"))
+        OnExit(this._method(this, "shutdown"))
+        
         ; Create program folders
         splash.("Creating`nFolders")
         this.folder_check() ? this.error(A_ThisFunc, "Folder's could not be created.", 1) : ""
+        
         ; Get fresh streamer data
         splash.("Downloading`nStreamer Data")
         this.get_streamer_data()
+        
         ; Create streamer folders
         splash.("Creating`nStreamer`nFolders")
         this.create_streamer_paths() ? this.error(A_ThisFunc, "Unable to create streamer folders.", 1) : ""
+        
         ; Load error log
         splash.("Loading`nLog")
         this.load_log() ? this.error(A_ThisFunc, "Unable to load error log.", 1) : ""
+        
         ; Download images
         splash.("Downloading`nImages")
         this.download_images() ? this.error(A_ThisFunc, "Unable to download images.", 1) : ""
+        
         ; Generate system tray
         splash.("Creating`nFolders")
         this.systray.create() ? this.error(A_ThisFunc, "The system tray could not be created.", 1) : ""
+        
         ; Create and load notify_list settings
         splash.("Generating`nNotify List")
         this.generate_notify_list()
+        
         ; Create GUI
         splash.("Creating`nGUI")
         this.main.create()
         this.main.Show()
+        
         ; Check for updates!
         splash.("Update`nCheck!")
         this.update_check(1)
+        
         ; Start heartbeat
         splash.("Starting`nheartbeat.`n(CLEAR!!!)")
         this.heartbeat()
+        
         ; Done
         splash.("It's alive!")
-        this.splash.finish()
+        rust_dc.guis.splash.finish()
         Return
     }
     
@@ -207,10 +218,12 @@ Class rust_dc
     
     shutdown()
     {
-        this.save_log()                                                     ; Save error logs
-        this.main.save_last_xy()                                        ; Save last coords
-        this.save_settings("main", "interval", this.main.interval)  ; Save frequency of checking
-        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?   
+        this.save_log()                                                 ; Save error logs
+        ; Replace this with this.save_gui_settings()
+        this.guis.main.save_last_xy()                                   ; Save last coords
+        this.save_settings("main", "interval", this.main.interval)      ; Save frequency of checking
+        
+        ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?
         ; IfMsgBox, Yes
         ;     FileRemoveDir, % this.path.app, 1
         Return
@@ -220,7 +233,7 @@ Class rust_dc
     {
         If verify
         {
-            MsgBox, 0x4, Exiting, Close program?
+            MsgBox, 0x4, Exiting, % "Close " this.title "?"
             IfMsgBox, No
                 Return
         }
@@ -244,7 +257,7 @@ Class rust_dc
         For key, path in this.path
             If (path = "")
                 Continue
-            Else If !InStr(path, ".") && (FileExist(path) = "")
+            Else If !InStr(path, ".") && (!InStr(FileExist(path) = ""), "D")
             {
                 FileCreateDir, % path
                 If ErrorLevel
@@ -307,8 +320,8 @@ Class rust_dc
             && (this.notify_list[user.username])                    ; Is user on the notify list?
             && (notify := this.notify_user(user))                   ; Did successful notification happen?
                 Break
-        
-        (notify = 0) ? this.systray. := True                        ; If no notifications, stop icon flash
+        MsgBox check on this part
+        (notify = 0) ? this.systray.icon_flash(0) := True                        ; If no notifications, stop icon flash
         Return
     }
     
@@ -383,7 +396,7 @@ Class rust_dc
             this.streamer_launch(the_line.1)
         Else If (the_line.1.username = this.live_stream.username)
         {
-            time_running := this.readable_time(this.live_stream.time, A_TickCount)
+            time_running := this.convert_ms_to_time(this.live_stream.time, A_TickCount)
             MsgBox, 0x4, Warning, % "Another stream was opened earlier and has not been running the required drop time."
                 . "`nDo you still want to launch " user_data.username "'s page?"
                 . "`n`nClick Yes to launch and No defer this uer until the current stream finishes."
@@ -509,7 +522,7 @@ Class rust_dc
         Return (this.streamer_data = "" ? 1 : 0)
     }
     
-    use_method(obj, method, param="")
+    _method(obj, method, param="")
     {
         bf := ObjBindMethod(obj, method, param*)
         Return bf
@@ -1377,7 +1390,7 @@ Class rust_dc
         Return pid
     }
     
-    readable_time(ms_in_1, ms_in_2 := "")
+    convert_ms_to_time(ms_in_1, ms_in_2 := "")
     {
         static ms_convert  := [{txt:"day" , ms:86400000}
                               ,{txt:"hour", ms: 3600000}
@@ -1407,7 +1420,7 @@ Class rust_dc
     {
         If (rgb >= 0xFFFFFF)
             Return
-        GuiControl, c%rgb%, % this.guis.gHwnd.error_txt 
+        GuiControl, c%rgb%, % this.guis.gHwnd.main.error_txt 
         rgb += 0x000101
         bf := ObjBindMethod(this, "err_notify_color_changer", rgb)
         Sleep, 1
