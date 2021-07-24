@@ -161,12 +161,14 @@ Class rust_dc
         
         ; Create GUI
         splash.("Creating`nGUI")
-        this.main.create()
-        this.main.Show()
+        this.guis.main.create()
+        this.guis.main.Show()
         
         ; Check for updates!
         splash.("Update`nCheck!")
         this.update_check(1)
+        ; Update cleanup
+        (A_Args.3 = 1) ? this.temp_cleanup() : ""
         
         ; Start heartbeat
         splash.("Starting`nheartbeat.`n(CLEAR!!!)")
@@ -220,8 +222,9 @@ Class rust_dc
     {
         this.save_log()                                                 ; Save error logs
         ; Replace this with this.save_gui_settings()
-        this.guis.main.save_last_xy()                                   ; Save last coords
-        this.save_settings("main", "interval", this.main.interval)      ; Save frequency of checking
+        this.guis.main.save_main_xy()                                   ; Save last coords
+        this.save_settings("main", "interval"                           ; Save check interval
+            , this.guis.main.get_interval())
         
         ; MsgBox, 0x4, Cleanup, Delete downloaded images and other files?
         ; IfMsgBox, Yes
@@ -312,6 +315,8 @@ Class rust_dc
     ;#####################
     notify_check()
     {
+        MsgBox I want to go over this again. I don't feel like I wrote this correctly...
+        
         notify := 0
         For index, user in this.streamer_data                       ; Compare fresh data to old notify list
             If (user.online)                                        ; Is user online?
@@ -389,38 +394,48 @@ Class rust_dc
         If !is_in_line
             the_line.Push(user_data)
         
-        ; If no active streamer, launch one
-        If !this.live_stream.active
-            this.launch_streamer(the_line.1)
-        ; If there's an active streamer, 
-        Else If (the_line.1.username = this.live_stream.username)
-        {
-            time_running := this.convert_ms_to_time(this.live_stream.time, A_TickCount)
-            MsgBox, 0x4, Warning, % "Another streamer was opened earlier and has not been running the required drop time."
-                . "`nDo you still want to launch " user_data.username "'s page?"
-                . "`n`nClick Yes to launch and No defer this uer until the current stream finishes."
-            IfMsgBox, Yes
-                this.kill_stream(strm.pid)
-                , wait_list.InsertAt(1) := user_data
-            Else wait_list.Push(user_data)
-        }
+        
+        
+        ;; THIS ALL NEEDS TO BE MOVED TO THE TIMER SECTION
+        ;; ADDING A USER SHOULD ONLY OCCUR ON NOTIFICATION
+        ;; UPDATING OF THE LINE SHOULD BE DONE ON A TIMER
+        ;; THAT MEANS THAT the_line WILL NEED TO BE MOVED.
+        ;~ ; If no active streamer, launch one
+        ;~ If !this.live_stream.active
+            ;~ this.update_live_stream(the_line.1)
+        ;~ ; Else 
+        ;~ Else If is_in_line
+            
+        ;~ Else If (the_line.1.username = this.live_stream.username)
+        ;~ {
+            ;~ time_running := this.convert_ms_to_time(this.live_stream.time, A_TickCount)
+            ;~ MsgBox, 0x4, Warning, % "Another streamer was opened earlier and has not been running the required drop time."
+                ;~ . "`nDo you still want to launch " user_data.username "'s page?"
+                ;~ . "`n`nClick Yes to launch and No defer this uer until the current stream finishes."
+            ;~ IfMsgBox, Yes
+                ;~ this.kill_stream(strm.pid)
+                ;~ , wait_list.InsertAt(1) := user_data
+            ;~ Else wait_list.Push(user_data)
+        ;~ }
         Return
     }
     
-    launch_streamer(user_data)
+    ; active=1 sets everything to the current user data
+    ; active=0 clears out all current info
+    update_live_stream(active=1, user="")
     {
-        this.live_stream.active   := 1
-        this.live_stream.username := user_data.username
-        this.live_stream.pid      := this.open_url(user_data.profile_url)
-        this.live_stream.time     := A_TickCount
+         this.live_stream.active   := (active ? True                            : 0)
+        ,this.live_stream.username := (active ? user.username                   : "")
+        ,this.live_stream.pid      := (active ? this.open_url(user.profile_url) : "")
+        ,this.live_stream.time     := (active ? A_TickCount                     : 0)
         Return
     }
     
     kill_stream(pid)
     {
-        WinClose, % "ahk_pid " pid,, 1000
+        WinClose, % "ahk_pid " pid,, 1000       ; Soft close
         Sleep, 1000
-        If WinExist("ahk_pid " pid)
+        If WinExist("ahk_pid " pid)             ; If win still exists, hard close
             WinKill, % "ahk_pid " pid,, 1000
         Return
     }
@@ -453,15 +468,12 @@ Class rust_dc
                 , option:=0)
         }
         
-        retry--
-        If (Retry < 1)
+        If (--Retry < 1)
             this.error(A_ThisFunc, "Error getting data from site: " this.url.facepunch)
-            , retry := 5
         Else If (web.ResponseText = "")
-            SetTimer, % this._meth(this, "update_streamer_html", retry), -250
+            SetTimer, % this._method(this, "update_streamer_html", retry), -400
         Else
             this.html := web.ResponseText
-            , retry := 5
         Return
     }
     
@@ -487,7 +499,8 @@ Class rust_dc
         , match     := match1 := ""
         , this.streamer_data  := ""
         
-        If (this.html = ""){
+        If (this.html = "")
+        {
             this.error(A_ThisFunc, "No HTML was downloaded to parse."
                 . "`nhtml: " this.html)
             Return 1
@@ -673,7 +686,7 @@ Class rust_dc
                 Gui, Font, % this.font.def
                 Gui, Add, Text, w%ref_bud_w% h%ref_def_h% xs+%pad% yp+%pad_gb% +Center, 1
                 Gui, Add, Slider, w%ref_sld_w% h%ref_def_h% x+0 yp range%slide_min%-%slide_max% +HWNDhwnd Line1 ToolTip TickInterval AltSubmit
-                    , % this.interval_load()
+                    , % this.load_interval()
                     gHwnd.interval_sld := hwnd
                     add_method(hwnd, this, "interval_slider_moved")
                     this.interval_slider_moved(hwnd,"","")
@@ -706,17 +719,17 @@ Class rust_dc
                 noti_cb_w   := gb_w - pad2
                 , noti_cb_h := 16
                 , noti_edt_h:= 20
-                , noti_gb_h := (this.notify_opt.MaxIndex() * (noti_cb_h + padh)) + pad_ul - padh
+                , noti_gb_h := (rust_dc.notify_opt.MaxIndex() * (noti_cb_h + padh)) + pad_ul - padh
                 y := last_gb + pad
                 Gui, Font, % this.font.gb
                 Gui, Add, Groupbox, w%gb_w% h%noti_gb_h% xs ys+%y% +HWNDhwnd Section, Notify Options:
                     last_gb := noti_gb_h
                 Gui, Font, % this.font.def
-                For index, data in this.notify_opt
+                For index, data in rust_dc.notify_opt
                 {
                     Gui, Add, Checkbox, % "w" noti_cb_w " h" noti_cb_h " xs+" pad " " (index = 1 ? " ys+" pad_gb : " y+" padh) " +HWNDhwnd", % data.txt
                     gHwnd["notify_" data.type] := hwnd
-                    value := (this.load_settings("notify_pref", data.type) > 0 ? 1 : 0)
+                    value := (rust_dc.load_settings("Notify_Options", data.type) > 0 ? 1 : 0)
                     GuiControl,, % hwnd, % value
                     add_method(hwnd, this, "notify_checkbox_checked", data.type, hwnd)
                     this.notify_checkbox_checked(data.type, hwnd)
@@ -735,7 +748,7 @@ Class rust_dc
                 ; opacity
                 ; 
                 
-                opt_list := [{txt:"Opacity" ,type:"Slider"     , rangel:1, rangeh:this.streamer_data.MaxIndex()}
+                opt_list := [{txt:"Opacity" ,type:"Slider"     , rangel:1, rangeh:rust_dc.streamer_data.MaxIndex()}
                             ,{txt:"Columns" ,type:"Slider"     , rangel:1, rangeh:100}
                             ,{txt:"Lock"    ,type:"Checkbox"   } ]
                 txt_h       := 16
@@ -758,8 +771,8 @@ Class rust_dc
                     ;gHwnd.overlay_click := hwnd
                 
                 ; Donations quick links
-                link_list   := [{txt:"Ko-Fi Donation"   , url:this.url.patreon  }
-                               ,{txt:"Patreon Donation" , url:this.url.kofi     } ]
+                link_list   := [{txt:"Ko-Fi Donation"   , url:rust_dc.url.patreon  }
+                               ,{txt:"Patreon Donation" , url:rust_dc.url.kofi     } ]
                 , ql_txt_w  := gb_w - pad2
                 , ql_txt_h  := 16
                 , ql_gb_h  := (ql_txt_h + padh) * link_list.MaxIndex() + pad_ul
@@ -802,7 +815,7 @@ Class rust_dc
                 , notify_cb_h   := 20
                 , action_btn_w  := (drop_pic_w - avatar_w - pad2) / 2
                 , action_btn_h  := avatar_h - notify_cb_h - pad
-                , gHwnd         := this.guis.gHwnd.main[username] := {}
+                , gHwnd         := rust_dc.guis.gHwnd.main[username] := {}
                 
                 Gui, Main:Default
                 Gui, Font, % this.font.gb
@@ -811,12 +824,12 @@ Class rust_dc
                 
                 ; Add online background to groupbox border
                 x := sw - online_w - padh
-                Gui, Add, Picture, w%online_w% h%online_h% xp+%x% yp +HWNDhwnd, % this.path["img_" (user.online ? "online" : "offline")]
+                Gui, Add, Picture, w%online_w% h%online_h% xp+%x% yp +HWNDhwnd, % rust_dc.path["img_" (user.online ? "online" : "offline")]
                     gHwnd.online_pic := hwnd
                 ; Add online text 
                 Gui, Font, % this.font.stat
                 Gui, Add, Text, w%online_w% h%online_h% xp yp+2 +Center +HWNDhwnd, % user.online ? "LIVE" : "OFFLINE"
-                    this.guis.transparent_bg(hwnd)
+                    this.transparent_bg(hwnd)
                     gHwnd.online_txt := hwnd
                 
                 ; Drop_pic image
@@ -844,8 +857,8 @@ Class rust_dc
                 x := avatar_w + pad
                 Gui, Add, Checkbox, w%w% h%notify_cb_h% xs+%x% y+%padh% +HWNDhwnd, Notify Me!
                     gHwnd.notify_cb := hwnd
-                    add_method(hwnd, this, "notify_action", name)
-                    GuiControl,, % hwnd, % this.notify_list[name]
+                    add_method(hwnd, this, "notify_box_checked", name)
+                    GuiControl,, % hwnd, % rust_dc.notify_list[name]
                 ; Hide the buttons until they're needed
                 GuiControl, Hide, % gHwnd.snooze_btn
                 GuiControl, Hide, % gHwnd.dismiss_btn
@@ -853,28 +866,30 @@ Class rust_dc
                 Return
             }
             
+            ; 1 = Check all, 0 = Uncheck all
             checkbox_all_streamers(state)
             {
-                For index, user in this.streamer_data
-                    GuiControl,, % this.guis.gHwnd.main[user.username].notify_cb, % state
+                For index, user in rust_dc.streamer_data
+                    GuiControl,, % this.gHwnd.main[user.username].notify_cb, % state
                 Return
             }
             
             notify_checkbox_checked(label, hwnd)
             {
                 GuiControlGet, state,, % hwnd
-                rust_dc.save_settings("notify_pref", label, state)  ; Save to settins file
+                rust_dc.save_settings("Notify_Options", label, state)  ; Save to settins file
                 Return
             }
             
             overlay_checkbox_checked(label, hwnd)
             {
+                MsgBox still needs to be written. %A_ThisFunc%
                 Return
             }
             
-            interval_load()
+            load_interval()
             {
-                i := this.load_settings("main", "interval")
+                i := rust_dc.load_settings("main", "interval")
                 Return (i = "Err") ? 6
                      : (i < 1)     ? 1
                      : (i > 10)    ? 10
@@ -883,21 +898,21 @@ Class rust_dc
             
             get_interval()
             {
-                GuiControlGet, interval, , % this.guis.gHwnd.main.interval_sld
+                GuiControlGet, interval, , % this.gHwnd.main.interval_sld
                 Return interval
             }
             
             update_interval_per_second()
             {
                 GuiControl, 
-                    , % this.guis.gHwnd.cps_txt
+                    , % this.gHwnd.main.cps_txt
                     , % "Checking every " Round(60 / this.get_interval()) " seconds" 
                 Return 
             }
             
             start_update_check_timer()
             {
-                bf  := ObjBindMethod(this, "update_check")
+                bf  := ObjBindMethod(rust_dc, "update_check")
                 SetTimer, % bf, -60000
                 Return
             }
@@ -905,15 +920,15 @@ Class rust_dc
             interval_slider_moved(hwnd)
             {
                 this.update_interval_per_second()
-                this.next_beat(1)
+                rust_dc.save_settings("main", "interval", this.get_interval())
                 Return
             }
             
-            notify_action(name, hwnd, GuiEvent, EventInfo, ErrLevel:="")
+            notify_box_checked(name, hwnd, GuiEvent, EventInfo, ErrLevel:="")
             {
                 GuiControlGet, state, , % hwnd                  ; Get check state
-                this.notify_list[name] := state                 ; Update state into notify list
-                this.save_settings("notify_list", name, state)  ; Save to settins file
+                rust_dc.notify_list[name] := state                 ; Update notify list
+                rust_dc.save_settings("notify_list", name, state)  ; Save to settins file
                 ; This should be changed to "update_timer" or something else. this.heartbeat()                                ; Do a check
                 Return
             }
@@ -921,23 +936,17 @@ Class rust_dc
             update_gui()
             {
                 txt := ""
-                For index, user in this.streamer_data
+                For index, user in rust_dc.streamer_data
                 {
                     ; Get current text
-                    GuiControlGet, txt,, % this.guis.gHwnd[user.username].online_txt
-                    
-                    ; Don't update if online status hasn't changed
-                    If ((txt = "live") && (user.online))
-                        Continue
-                    Else If ((txt = "offline") && !user.online)
-                        Continue
-                    Else
+                    GuiControlGet, txt,, % this.gHwnd[user.username].online_txt
+                    ; Update status on change
+                    If ( user.online && (txt = "offline")) 
+                    || (!user.online && (txt = "live")   )
                     {
-                        id      := this.guis.gHwnd[user.username].online_pic
-                        path    := (user.online ? "img_online" : "img_offline")
-                        
-                        GuiControl,, % id, % this.path[path]
-                        GuiControl,, % this.guis.gHwnd[user.username].online_txt
+                        GuiControl,, % this.gHwnd[user.username].online_pic
+                            , % rust_dc.path["img_" (user.online ? "online" : "offline")]
+                        GuiControl,, % this.gHwnd[user.username].online_txt
                             , % (user.online ? "LIVE" : "OFFLINE")
                     }
                 }
@@ -949,7 +958,9 @@ Class rust_dc
                 If (A_Gui = "Main")
                 {
                     MouseGetPos,,,, con
-                    If !InStr(con, "button") && !InStr(con, "trackbar321") && !InStr(con, "edit")
+                    If !InStr(con, "button")
+                    && !InStr(con, "trackbar321")
+                    && !InStr(con, "edit")
                         SendMessage, 0x00A1, 2,,, A
                 }
                 Return
@@ -957,63 +968,63 @@ Class rust_dc
             
             WM_EXITSIZEMOVE()
             {
-                this.save_last_xy()
+                this.save_main_xy()
                 Return
             }
             
-            load_last_xy()
+            get_main_xy()
             {
-                this.last_x := this.load_settings("main", "last_x")
-                this.last_y := this.load_settings("main", "last_y")
+                WinGetPos, x, y,,, % "ahk_id " rust_dc.guis.main.gui
+                this.last_x := (x*0 = 0) ? x : 0
+                this.last_y := (y*0 = 0) ? y : 0
                 Return
             }
             
-            update_last_xy()
+            load_main_xy()
             {
-                WinGetPos, x, y,,, % "ahk_id " this.guis.gHwnd.gui_main
-                this.last_x := x
-                , this.last_y := y
+                 x := rust_dc.load_settings("main", "gui_last_x")
+                ,y := rust_dc.load_settings("main", "gui_last_y")
+                ,this.last_x := (x = "Err") ? 0 : x
+                ,this.last_y := (y = "Err") ? 0 : y
                 Return
             }
             
-            save_last_xy()
+            save_main_xy()
             {
-                this.update_last_xy()
-                (this.last_x*0 = 0) ? this.save_settings("main", "last_x", this.last_x) : ""
-                (this.last_y*0 = 0) ? this.save_settings("main", "last_y", this.last_y) : ""
+                this.get_main_xy()
+                ,rust_dc.save_settings("main", "gui_last_x", this.last_x)
+                ,rust_dc.save_settings("main", "gui_last_y", this.last_y)
                 Return
             }
             
             Show()
             {
-                this.load_last_xy()
-                (this.last_x*0 = 0 ? "" : this.last_x := 0)
-                (this.last_y*0 = 0 ? "" : this.last_y := 0)
-                Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % this.gui_name ;Center, % this.title
+                this.load_main_xy()
+                Gui, Main:Show, % "AutoSize x" this.last_x " y" this.last_y, % rust_dc.title
                 this.visible := True
-                this.systray.update_tray_show_hide()
+                rust_dc.guis.systray.update_tray_show_hide()
             }
             
             Hide()
             {
-                this.save_last_xy()
+                this.save_main_xy()
                 Gui, Main:Hide
                 this.visible := False
-                this.systray.update_tray_show_hide()
+                rust_dc.systray.update_tray_show_hide()
             }
             
             Toggle()
             {
-                this.visible
-                    ? this.Hide() 
-                    : this.Show()
+                this.visible ? this.Hide() : this.Show()
             }
-        }    
+        }
         
         Class splash extends guis
         {
-            Static  font_opt   := "s20 Bold "
-            start(msg)
+            Static  name    := "Splash"
+                    ,font   := {shadow  :"s20 cBlack Norm Bold"
+                               ,txt     :"s20 cWhite Norm" }
+            start(first_msg)
             {
                 pad         := 10
                 , padO      := 12
@@ -1024,36 +1035,35 @@ Class rust_dc
                 , txt_w     := gui_w - pad2
                 , txt_h     := gui_h - pad2
                 , scrn_t    := scrn_r := scrn_b := scrn_l := 0
-                , this.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
-                , this.img_getter(this.url.img_rust_symbol, this.path.img, "img_rust_symbol.png")
+                , rust_dc.get_monitor_workarea(scrn_t, scrn_r, scrn_b, scrn_l)
+                , rust_dc.img_getter(rust_dc.url.img_rust_symbol, rust_dc.path.img, "img_rust_symbol.png")
                 
-                Gui, splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
-                    this.guis.gHwnd.gui_splash := hwnd
-                Gui, splash:Default
-                Gui, Margin, 0, 0
+                Gui, Splash:New, -Caption +HWNDhwnd +Border +ToolWindow +AlwaysOnTop
+                    this.gHwnd.gui_splash := hwnd
+                Gui, Splash:Default
+                Gui, Margin, % pad, % pad
                 Gui, Color, 0x000001
-                
-                Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % this.path.img_rust_symbol
-                Gui, Font, % "s20 cBlack Bold", Consolas
-                Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                    this.guis.gHwnd.spalsh_txt_shadow := hwnd
-                Gui, Font, % "s20 cWhite Norm", Consolas
-                Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % "`n" msg
-                    this.guis.gHwnd.splash_txt := hwnd
+                Gui, Add, Picture, w%gui_w% h%gui_h% x0 y0, % rust_dc.path.img_rust_symbol
+                Gui, Add, Text, w%txt_w% h%txt_h% x%pad% y%pad% +HWNDhwnd +Center +BackgroundTrans, % ""
+                    this.gHwnd.spalsh_txt_shadow := hwnd
+                Gui, Font, % , Consolas
+                Gui, Add, Text, w%txt_w% h%txt_h% x%padO% y%padO% +HWNDhwnd +Center +BackgroundTrans, % ""
+                    this.gHwnd.splash_txt := hwnd
                 x := scrn_r - scrn_l - gui_w
                 y := scrn_b - scrn_t - gui_h
                 Gui, Show, w%gui_w% h%gui_h% x%x% y%y%
-                this.animate()
+                ;this.animate()
                 Return
             }
             
             update(txt)
             {
                 Gui, Splash:Default
+                ; Two fonts to create a shadow effect
                 Gui, Font, % "s20 cBlack Bold", Consolas
-                GuiControl,, % this.guis.gHwnd.spalsh_txt_shadow, % "`n" txt
+                GuiControl,, % this.gHwnd.spalsh_txt_shadow, % "`n" txt
                 Gui, Font, % "s20 cWhite Norm", Consolas
-                GuiControl,, % this.guis.gHwnd.splash_txt, % "`n" txt
+                GuiControl,, % this.gHwnd.splash_txt, % "`n" txt
                 Gui, Splash:Show, AutoSize
             }
             
@@ -1071,13 +1081,40 @@ Class rust_dc
             
             Destroy()
             {
-                Gui, splash:Destroy
+                Gui, Splash:Destroy
             }
         }
         
+        Class overlay extends rust_dc
+        {
+            Static  name        := "Overlay"
+                    ,visible    := False
+            
+            create()
+            {
+                Gui, % this.name ":New", -Caption -ToolWindow +HWNDhwnd
+                Gui, % this.name ":Default"
+                Return
+            }
+          
+            Show()
+            {
+                MsgBox, Overlay not implemented yet.
+                ;x := this.last_x
+                ;y := this.last_y
+                ;h := this.get_overlay_height()
+                ;w := this.get_overlay_width()
+                ;Gui, % this.name ":Show", w%w% h%h% x%x% y%y%
+                Return
+            }
+            
+            Hide()
+            {
+                Gui, % this.name ":Hide"
+                Return
+            }
+        }
     }
-    
-
     
     ; Show/Hide Gui (default)
     ; Overlay Control
@@ -1092,25 +1129,30 @@ Class rust_dc
         create()
         {
             Menu, Tray, NoStandard                              ; Clean slate
-            this.icon_reset()
+            this.icon_reset()                                   ; Default icon
             
-            bf := ObjBindMethod(this.main, "toggle")
+            bf := ObjBindMethod(rust_dc.guis.main, "toggle")
             Menu, Tray, Add, Show, % bf                         ; Show/hide option
             Menu, Tray, Default, 1&                             ; Set show/hide to default
             
-            Menu, Tray, Add                                     ; DIVIDER for links
-            bf := ObjBindMethod(this, "open_url", this.url.twitch_rewards)
+            ; Need to add overlay controls
+            ; Consider changing the default from toggling the gui to toggling the overlay
+            ;~ bf := ObjBindMethod(this, "open_url", this.url.twitch_rewards)
+            ;~ Menu, Tray, Add, Overlay, % bf       ; Rewards page
+            
+            Menu, Tray, Add                                     ; DIVIDER Links
+            bf := ObjBindMethod(this, "open_url", rust_dc.url.twitch_rewards)
             Menu, Tray, Add, Drop Reward Claim Page, % bf       ; Rewards page
-            bf := ObjBindMethod(this, "open_url", this.url.facepunch)
+            bf := ObjBindMethod(this, "open_url", rust_dc.url.facepunch)
             Menu, Tray, Add, Facepunch Twitch Page, % bf        ; Rust update/blog page
-            bf := ObjBindMethod(this, "open_url", this.url.facepunch_blog)
+            bf := ObjBindMethod(this, "open_url", rust_dc.url.facepunch_blog)
             Menu, Tray, Add, Facepunch Twitch Page, % bf        ; Facepunch home page
-            bf := ObjBindMethod(this, "open_url", this.url.git_homepage)
+            bf := ObjBindMethod(this, "open_url", rust_dc.url.git_homepage)
             Menu, Tray, Add, Github Home Page, % bf             ; Github Repo
-            bf := ObjBindMethod(this, "open_url", this.url.git_homepage)
+            bf := ObjBindMethod(this, "open_url", rust_dc.url.git_homepage)
             Menu, Tray, Add, Donate, % bf                       ; Donation link
             
-            Menu, Tray, Add
+            Menu, Tray, Add                                     ; DIVIDER Exit area
             bf := ObjBindMethod(this, "quit")
             Menu, Tray, Add, Exit, % bf                         ; Exit option
             Return
@@ -1118,13 +1160,12 @@ Class rust_dc
         
         icon_reset()
         {
-            Menu, Tray, Icon, % this.path.img_rust_symbol     ; Set Icon
+            Menu, Tray, Icon, % rust_dc.path.img_rust_symbol     ; Set Icon
         }
         
         update_tray_show_hide()
         {
-            Menu, Tray, Rename, 1&, % (this.main.visible ? "Hide" : "Show")
-            Return
+            Menu, Tray, Rename, 1&, % (rust_dc.guis.main.visible ? "Hide" : "Show")
         }
         
         icon_flash_stop()
@@ -1139,7 +1180,7 @@ Class rust_dc
                     , running   := 0
             
             toggle := !toggle
-            Menu, Tray, Icon, % this.path["img_rust_symbol" (toggle ? "" : "_2")]
+            Menu, Tray, Icon, % rust_dc.path["img_rust_symbol" (toggle ? "" : "_2")]
             bf := ObjBindMethod(this, "icon_flash")
             
             If (this.flash_stop)
@@ -1160,31 +1201,9 @@ Class rust_dc
         
     }
     
-    Class overlay extends rust_dc
-    {
-        Static  visible := False
-        create()
-        {
-            this.guis.gHwnd.overlay := {}
-            
-            Gui, overlay:New, -Caption -ToolWindow +HWNDhwnd
-            
-            Return
-        }
-      
-        Show()
-        {
-            MsgBox, Overlay not implemented yet.
-            ;Gui, overlay:Show
-            Return
-        }
-        Hide()
-        {
-            Gui, overlay:Hide
-            Return
-        }
-    }
-    
+    ; ########################
+    ; ##  Common Functions  ##
+    ; ########################
     add_method_to_control(hwnd, object_name, method_name, params*)
     {
         bf := ObjBindMethod(object_name, method_name, params*)
@@ -1192,15 +1211,15 @@ Class rust_dc
         Return
     }
     
-    ; Get the non-reserved area of a screen
-    get_monitor_workarea(ByRef mTop, ByRef mRight, ByRef mBottom, ByRef mLeft, m_num:=0)
+    ; Get the non-reserved area of a screen m_num
+    get_monitor_workarea(ByRef mTop, ByRef mRight, ByRef mBottom, ByRef mLeft, m_num=0)
     {
         If (m_num = 0)
             SysGet, m_num, MonitorPrimary
         SysGet, m, MonitorWorkArea, % m_num
         Return
     }
-
+    
     update_check(verbose := 0)
     {
         online_version  := Trim(this.web_get(this.url.online_version), " `t`r`n")
@@ -1218,19 +1237,21 @@ Class rust_dc
                     IfMsgBox, Yes
                         this.run_update()
                 }
+                Break
             }
         
+        ; Changes the update area of the GUI depending on if an update is available
         Gui, Main:Default
-        ; Set the Updater Groupbox text and color
-        GuiControl, % "+c" (update_found ? "FF0000" : "00FF00"), % this.guis.gHwnd.updater_gb
-        ; Set the button text
+        GuiControl                                          ; Set the Updater Groupbox text and color
+            , % "+c" (update_found ? "FF0000" : "00FF00")   ; Red if update found, green if up-to-date
+            , % this.guis.gHwnd.updater_gb
         Gui, Font, Norm cBlack
-        GuiControl, Text, % this.guis.gHwnd.updater_btn, % (update_found ? "Update Available!" : "Up To Date!")
-        ; Enable/disable
-        GuiControl, % (update_found ? "Enable" : "Disable"), % this.guis.gHwnd.updater_btn
+        GuiControl, Text, % this.guis.gHwnd.updater_btn     ; Update text
+            , % (update_found ? "Update Available!" : "Up To Date!")
+        GuiControl, % (update_found ? "Enable" : "Disable") ; Enable button if update available
+        , % this.guis.gHwnd.updater_btn
         Return
     }
-    
     
     ; #############
     ; ## Updater ##
@@ -1257,27 +1278,30 @@ Class rust_dc
         
         ; Code to build an updater script
         code := "#SingleInstance Force"
+            . "`n#NoEnv"
             . "`nSleep, 1000"
             . "`nFileMove, % A_Args.1, % A_Args.2, 1"
             . "`nRun, % A_AhkPath A_Space A_Args.2"
             . "`nExitApp"
         source      := dq temp_path "\" file_name dq
         destination := dq A_ScriptFullPath dq
+        updated     := 1
+        path        := temp_path "\" upd_name
         
         ; Ensure temp folder is empty
         this.temp_cleanup()
         
         ; Create updater script
-        FileAppend, % code, % temp_path "\" upd_name
+        FileAppend, % code, % path
         (status := ErrorLevel)
-            ? this.error(A_ThisFunc, "Could not write updater file."
-                . "`nlocation: " temp_path "\" upd_name) : ""
+            ? this.error(A_ThisFunc, "Update Failed:"
+                . "`nCould not write updater file."
+                . "`nPath: " path ) : ""
         ; Run updater and exit this script
         Run, % A_AhkPath " " temp_path "\" upd_name
-            . " " source
-            . " " destination
-        
+            . " " source " " destination " " updated
         ExitApp
+        Return
     }
     
     ; Empty the temp folder
@@ -1291,7 +1315,7 @@ Class rust_dc
     ; ##########################
     ; Get image from url
     ; 
-    img_getter(url, path, file_name, overwrite:=0)
+    img_getter(url, path, file_name, overwrite=0)
     {
         Status := 0
         If (FileExist(path) = "")
@@ -1299,8 +1323,7 @@ Class rust_dc
             FileCreateDir, % path
             (status := ErrorLevel)
                 ? this.error(A_ThisFunc, "Save path does not exist and could not be created."
-                    . "`npath: " path)
-                : ""
+                    . "`npath: " path) : ""
         }
         
         If (FileExist(path "\" file_name) = "") || (overwrite = 1)
@@ -1337,9 +1360,8 @@ Class rust_dc
         
         running := True
         Loop, 5
-            SoundPlay, % "*" 16
+            SoundPlay, % "*" 16, 1
         running := False
-        Sleep, 1
         Return
     }
     
